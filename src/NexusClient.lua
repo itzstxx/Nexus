@@ -89,8 +89,8 @@ local isMobile = UserInputService.TouchEnabled and not UserInputService.Keyboard
 
 -- ── PANEL — adaptativo móvil / PC ───────────────────────────
 local vp = camera.ViewportSize
-local panelW = isMobile and 300 or 314
-local panelH = isMobile and math.min(math.floor(vp.Y * 0.60), 420) or 480
+local panelW = isMobile and math.min(math.floor(vp.X * 0.82), 380) or 314
+local panelH = isMobile and math.min(math.floor(vp.Y * 0.72), 500) or 480
 
 local main=Instance.new("Frame")
 main.Name="SyyPanel"
@@ -515,17 +515,63 @@ makeSlider(pageExt,"Velocidad Fly","FlySpeed",10,200)
 -- ── INF STAMINA ──────────────────────────────────────────────
 secLabel(pageExt,"Stamina")
 
--- conexiones activas de stamina (para limpiarlas al desactivar)
 local staminaConns = {}
+local staminaLoop  = false   -- controla el loop rápido
 
 local function disconnectStamina()
+    staminaLoop = false
     for _, c in ipairs(staminaConns) do pcall(function() c:Disconnect() end) end
     staminaConns = {}
 end
 
 local function hookStamina(char)
     if not char then return end
-    -- ── PlaceId 455366377 (el juego de la foto) ── método exacto y directo
+    staminaLoop = true
+
+    -- ── LOOP RÁPIDO (0.01s) ─────────────────────────────────
+    -- Esto cubre el caso donde el juego baja la stamina mientras corres.
+    -- El .Changed llega DESPUÉS de que ya bajó; el loop la sube antes de que
+    -- el servidor la vuelva a bajar en el siguiente frame.
+    task.spawn(function()
+        while staminaLoop and Config.InfStamina do
+            pcall(function()
+                local c2 = player.Character
+                if not c2 then return end
+
+                -- PlaceId 455366377 — tiene el objeto "Stamina" directo en el char
+                if game.PlaceId == 455366377 then
+                    local st = c2:FindFirstChild("Stamina")
+                    if st then st.Value = 100 end
+                    return
+                end
+
+                -- Genérico — busca cualquier valor de stamina/sprint/energy
+                for _, v in ipairs(c2:GetDescendants()) do
+                    if v:IsA("NumberValue") or v:IsA("IntValue") or v:IsA("DoubleConstrainedValue") then
+                        local nm = v.Name:lower()
+                        if nm:find("stamina") or nm:find("sprint") or nm:find("energy")
+                        or nm:find("endur") or nm:find("breath") then
+                            local maxV = v:IsA("DoubleConstrainedValue") and v.MaxValue or 100
+                            v.Value = maxV
+                        end
+                    end
+                end
+                -- Atributos Humanoid
+                local hum = c2:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    for _, attr in ipairs({"Stamina","Sprint","Energy","Endurance","Breath"}) do
+                        if hum:GetAttribute(attr) ~= nil then
+                            local mx = hum:GetAttribute("Max"..attr) or hum:GetAttribute(attr.."Max") or 100
+                            hum:SetAttribute(attr, mx)
+                        end
+                    end
+                end
+            end)
+            task.wait(0.01)
+        end
+    end)
+
+    -- ── HOOK .Changed (respaldo instantáneo) ────────────────
     if game.PlaceId == 455366377 then
         local stVal = char:WaitForChild("Stamina", 4)
         if stVal then
@@ -534,40 +580,6 @@ local function hookStamina(char)
                 stVal.Value = 100
             end)
             table.insert(staminaConns, c)
-        end
-        return  -- no necesita los métodos genéricos en este juego
-    end
-
-    -- ── Fallback genérico para cualquier otro juego ──────────
-    -- busca cualquier Value con nombre de stamina/sprint/energy en el char
-    for _, v in ipairs(char:GetDescendants()) do
-        if v:IsA("NumberValue") or v:IsA("IntValue") or v:IsA("DoubleConstrainedValue") then
-            local nm = v.Name:lower()
-            if nm:find("stamina") or nm:find("sprint") or nm:find("energy")
-            or nm:find("endur") or nm:find("breath") or nm:find("fuel") then
-                local maxV = v:IsA("DoubleConstrainedValue") and v.MaxValue or 100
-                pcall(function() v.Value = maxV end)
-                local c = v.Changed:Connect(function()
-                    pcall(function() v.Value = maxV end)
-                end)
-                table.insert(staminaConns, c)
-            end
-        end
-    end
-    -- atributos del Humanoid
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        for _, attr in ipairs({"Stamina","Sprint","Energy","Endurance","Breath","Fuel"}) do
-            pcall(function()
-                if hum:GetAttribute(attr) ~= nil then
-                    local mx = hum:GetAttribute("Max"..attr) or hum:GetAttribute(attr.."Max") or 100
-                    local c = hum:GetAttributeChangedSignal(attr):Connect(function()
-                        hum:SetAttribute(attr, mx)
-                    end)
-                    table.insert(staminaConns, c)
-                    hum:SetAttribute(attr, mx)
-                end
-            end)
         end
     end
 end
@@ -584,7 +596,7 @@ end)
 player.CharacterAdded:Connect(function(char)
     if not Config.InfStamina then return end
     disconnectStamina()
-    task.wait(0.5)  -- esperar que cargue el personaje
+    task.wait(0.5)
     hookStamina(char)
 end)
 
