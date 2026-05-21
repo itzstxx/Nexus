@@ -1,16 +1,14 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v3.0                        ║
+    ║           NEXUS  —  NexusClient  v4.0                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v3.0:                                             ║
-    ║  · Silent Aim: FOV hasta 500, TargetPart (Head/Chest/Leg     ║
-    ║    /Random Smart), HitChance, VisibleCheck, Snapline         ║
-    ║  · ESP: Skeleton, Box, Healthbar, Distance, Nametag          ║
-    ║    Cada opción es activable individualmente                  ║
-    ║  · Sistema de configuración persistente (writefile/readfile) ║
-    ║  · Tabs: Aimbot | Visuals | Settings                         ║
-    ║  · Firma: Hecho por EnanoTop1 (stx)                          ║
+    ║  NOVEDADES v4.0:                                             ║
+    ║  · Silent Aim arreglado + Manipulation mejorado              ║
+    ║  · Lista Blanca: jugadores en WL nunca son targetados        ║
+    ║  · FOV Color, Snapline Color, Colores ESP personalizables    ║
+    ║  · Modo Round Toggles, Auto Load Theme                       ║
+    ║  · Opciones estilo Dendrite (de las imágenes)                ║
     ╚══════════════════════════════════════════════════════════════╝
 ]]
 
@@ -35,7 +33,7 @@ local CONFIG_FILE   = "nexus_config.json"
 -- CONFIGURACIÓN PERSISTENTE
 -- ══════════════════════════════════════════════════════════════
 local DefaultConfig = {
-    -- Aimbot
+    -- Silent Aim
     SilentAimEnabled  = false,
     HitChance         = 100,
     Manipulation      = false,
@@ -44,6 +42,9 @@ local DefaultConfig = {
     FovRadius         = 500,
     Snapline          = false,
     TargetPart        = "Random",   -- "Head" | "UpperTorso" | "LowerTorso" | "Random"
+    -- Colores Aimbot (R,G,B por separado para serializar)
+    FovColorR = 255, FovColorG = 255, FovColorB = 255,
+    SnapColorR = 255, SnapColorG = 255, SnapColorB = 255,
     -- ESP
     EspEnabled        = false,
     EspBox            = true,
@@ -52,13 +53,28 @@ local DefaultConfig = {
     EspDistance       = true,
     EspNames          = true,
     EspMaxDist        = 500,
+    -- Colores ESP
+    BoxColorR=0,   BoxColorG=220,  BoxColorB=255,
+    SkelColorR=0,  SkelColorG=220, SkelColorB=255,
+    NameColorR=255,NameColorG=255, NameColorB=255,
+    -- Settings
+    RoundToggles      = false,  -- apaga aimbot y esp al terminar ronda
+    AutoLoadTheme     = false,
+    -- Lista Blanca (array de nombres de usuario)
+    Whitelist         = {},
 }
 
 local Config = {}
 
 local function deepCopy(t)
     local copy = {}
-    for k, v in pairs(t) do copy[k] = v end
+    for k, v in pairs(t) do
+        if type(v) == "table" then
+            copy[k] = deepCopy(v)
+        else
+            copy[k] = v
+        end
+    end
     return copy
 end
 
@@ -67,7 +83,11 @@ local function loadConfig()
         local raw = readfile(CONFIG_FILE)
         local decoded = HttpService:JSONDecode(raw)
         for k, v in pairs(DefaultConfig) do
-            Config[k] = (decoded[k] ~= nil) and decoded[k] or v
+            if decoded[k] ~= nil then
+                Config[k] = decoded[k]
+            else
+                Config[k] = type(v) == "table" and deepCopy(v) or v
+            end
         end
     end) then
         print("[NEXUS] Config cargada desde " .. CONFIG_FILE)
@@ -80,11 +100,43 @@ end
 local function saveConfig()
     pcall(function()
         writefile(CONFIG_FILE, HttpService:JSONEncode(Config))
-        print("[NEXUS] Config guardada en " .. CONFIG_FILE)
     end)
 end
 
 loadConfig()
+
+-- ══════════════════════════════════════════════════════════════
+-- WHITELIST HELPERS
+-- ══════════════════════════════════════════════════════════════
+local function isWhitelisted(p)
+    for _, name in ipairs(Config.Whitelist) do
+        if name:lower() == p.Name:lower() then
+            return true
+        end
+    end
+    return false
+end
+
+local function addWhitelist(name)
+    if name == "" then return false end
+    for _, n in ipairs(Config.Whitelist) do
+        if n:lower() == name:lower() then return false end
+    end
+    table.insert(Config.Whitelist, name)
+    saveConfig()
+    return true
+end
+
+local function removeWhitelist(name)
+    for i, n in ipairs(Config.Whitelist) do
+        if n:lower() == name:lower() then
+            table.remove(Config.Whitelist, i)
+            saveConfig()
+            return true
+        end
+    end
+    return false
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- LIMPIEZA
@@ -138,8 +190,8 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- PANEL PRINCIPAL
 -- ══════════════════════════════════════════════════════════════
-local MIN_W, MIN_H = 340, 460
-local panelW, panelH = 420, 560
+local MIN_W, MIN_H = 340, 480
+local panelW, panelH = 420, 580
 
 local main = Instance.new("Frame")
 main.Name                    = "NexusPanel"
@@ -193,7 +245,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.0 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -385,10 +437,6 @@ local function makeToggle(page, text, configKey, callback)
         if callback then callback(Config[configKey]) end
     end
 
-    row.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.Touch then onTap() end
-    end)
-    row.MouseButton1Click:Connect(onTap) -- Frame no tiene MouseButton1Click, workaround:
     local hitbox = Instance.new("TextButton")
     hitbox.Size              = UDim2.new(1,0,1,0)
     hitbox.BackgroundTransparency = 1
@@ -437,7 +485,6 @@ local function makeSliderRow(page, text, configKey, minV, maxV, callback)
     corner(fill, 8)
 
     local dragging = false
-
     local function update(ix)
         local alpha = math.clamp((ix - bar.AbsolutePosition.X)/bar.AbsoluteSize.X, 0, 1)
         local value = math.floor(minV + (maxV-minV)*alpha)
@@ -470,16 +517,72 @@ local function makeSliderRow(page, text, configKey, minV, maxV, callback)
     return row
 end
 
--- Dropdown (para TargetPart)
+-- Color picker (botón que abre un mini-picker RGB simplificado)
+local function makeColorRow(page, text, rKey, gKey, bKey, onChanged)
+    local row = Instance.new("Frame")
+    row.Size             = UDim2.new(1, 0, 0, 34)
+    row.BackgroundColor3 = Color3.fromRGB(4,22,38)
+    row.BorderSizePixel  = 0
+    row.Parent           = page
+    corner(row, 5)
+    stroke(row, Color3.fromRGB(0,160,255), 1, 0.45)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size             = UDim2.new(1,-50,1,0)
+    lbl.Position         = UDim2.fromOffset(10,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text             = text
+    lbl.TextColor3       = Color3.fromRGB(195,245,255)
+    lbl.Font             = Enum.Font.GothamMedium
+    lbl.TextSize         = 12
+    lbl.TextXAlignment   = Enum.TextXAlignment.Left
+    lbl.Parent           = row
+
+    local swatch = Instance.new("Frame")
+    swatch.Size             = UDim2.fromOffset(28, 20)
+    swatch.Position         = UDim2.new(1,-34,0.5,-10)
+    swatch.BackgroundColor3 = Color3.fromRGB(Config[rKey],Config[gKey],Config[bKey])
+    swatch.BorderSizePixel  = 0
+    swatch.Parent           = row
+    corner(swatch, 4)
+    stroke(swatch, Color3.fromRGB(0,190,255), 1, 0.2)
+
+    local function refreshSwatch()
+        swatch.BackgroundColor3 = Color3.fromRGB(Config[rKey],Config[gKey],Config[bKey])
+        if onChanged then onChanged() end
+    end
+
+    -- Cicla entre colores preset al tocar
+    local presets = {
+        {255,255,255}, {0,220,255}, {80,255,160},
+        {255,80,80},   {255,200,0},{200,0,255},
+    }
+    local presetIdx = 1
+    local hitbox = Instance.new("TextButton")
+    hitbox.Size              = UDim2.new(1,0,1,0)
+    hitbox.BackgroundTransparency = 1
+    hitbox.Text              = ""
+    hitbox.ZIndex            = 2
+    hitbox.Parent            = row
+    hitbox.MouseButton1Click:Connect(function()
+        presetIdx = (presetIdx % #presets) + 1
+        local p = presets[presetIdx]
+        Config[rKey] = p[1]; Config[gKey] = p[2]; Config[bKey] = p[3]
+        refreshSwatch()
+        saveConfig()
+    end)
+
+    return row
+end
+
+-- Dropdown
 local function makeDropdown(page, text, configKey, options, callback)
     local open = false
-
     local container = Instance.new("Frame")
     container.Size             = UDim2.new(1,0,0,34)
     container.BackgroundTransparency = 1
     container.ClipsDescendants = false
     container.Parent           = page
-    -- No UIListLayout aquí porque se expande dinámicamente; se maneja con resize
 
     local row = Instance.new("Frame")
     row.Size             = UDim2.new(1,0,0,34)
@@ -510,7 +613,6 @@ local function makeDropdown(page, text, configKey, options, callback)
     arrow.TextSize         = 16
     arrow.Parent           = row
 
-    -- Dropdown list (dentro del mismo contenedor, aparece debajo)
     local dropList = Instance.new("Frame")
     dropList.Size             = UDim2.new(1,0,0,#options*30)
     dropList.Position         = UDim2.fromOffset(0,36)
@@ -579,12 +681,18 @@ local pageAim = tabPages[1]
 
 sectionLabel(pageAim, "Silent Aim")
 makeToggle(pageAim,    "Silent Aim",    "SilentAimEnabled")
-makeSliderRow(pageAim, "HitChance",     "HitChance",  1, 100)
-makeToggle(pageAim,    "Manipulation",  "Manipulation")
 makeToggle(pageAim,    "VisibleCheck",  "VisibleCheck")
+makeToggle(pageAim,    "Manipulation",  "Manipulation")
+makeSliderRow(pageAim, "HitChance %",   "HitChance",  1, 100)
+
+sectionLabel(pageAim, "FOV")
 makeToggle(pageAim,    "FOV Circle",    "FovEnabled")
 makeSliderRow(pageAim, "Fov Radius",    "FovRadius",  1, 500)
+makeColorRow(pageAim,  "FOV Color",     "FovColorR","FovColorG","FovColorB")
+
+sectionLabel(pageAim, "Snapline")
 makeToggle(pageAim,    "Snapline",      "Snapline")
+makeColorRow(pageAim,  "Snapline Color","SnapColorR","SnapColorG","SnapColorB")
 
 sectionLabel(pageAim, "Target Part")
 makeDropdown(pageAim, "Target Part", "TargetPart",
@@ -598,18 +706,138 @@ local pageVis = tabPages[2]
 sectionLabel(pageVis, "ESP")
 makeToggle(pageVis, "ESP Enabled",   "EspEnabled")
 makeToggle(pageVis, "Box",           "EspBox")
+makeColorRow(pageVis,"Box Color",    "BoxColorR","BoxColorG","BoxColorB")
 makeToggle(pageVis, "Skeleton",      "EspSkeleton")
+makeColorRow(pageVis,"Skeleton Color","SkelColorR","SkelColorG","SkelColorB")
 makeToggle(pageVis, "Health Bar",    "EspHealthBar")
 makeToggle(pageVis, "Distancia",     "EspDistance")
 makeToggle(pageVis, "Nombres",       "EspNames")
-makeSliderRow(pageVis, "Dist Máx",   "EspMaxDist", 50, 1000)
+makeColorRow(pageVis,"Name Color",   "NameColorR","NameColorG","NameColorB")
+makeSliderRow(pageVis,"Dist Máx",    "EspMaxDist", 50, 1000)
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 3: SETTINGS
 -- ══════════════════════════════════════════════════════════════
 local pageSet = tabPages[3]
 
-sectionLabel(pageSet, "Configuración")
+sectionLabel(pageSet, "General")
+makeToggle(pageSet, "Round Toggles",   "RoundToggles")   -- apaga aim/esp al fin de ronda
+makeToggle(pageSet, "Auto Load Theme", "AutoLoadTheme")
+
+-- ── LISTA BLANCA ──────────────────────────────────────────────
+sectionLabel(pageSet, "Lista Blanca (Whitelist)")
+
+-- Caja de texto + botón Agregar
+do
+    local inputRow = Instance.new("Frame")
+    inputRow.Size             = UDim2.new(1,0,0,34)
+    inputRow.BackgroundColor3 = Color3.fromRGB(4,22,38)
+    inputRow.BorderSizePixel  = 0
+    inputRow.Parent           = pageSet
+    corner(inputRow, 5)
+    stroke(inputRow, Color3.fromRGB(0,160,255), 1, 0.45)
+
+    local nameBox = Instance.new("TextBox")
+    nameBox.Size              = UDim2.new(1,-80,1,-8)
+    nameBox.Position          = UDim2.fromOffset(6,4)
+    nameBox.BackgroundColor3  = Color3.fromRGB(3,14,26)
+    nameBox.BorderSizePixel   = 0
+    nameBox.Text              = ""
+    nameBox.PlaceholderText   = "Nombre de usuario..."
+    nameBox.PlaceholderColor3 = Color3.fromRGB(90,130,160)
+    nameBox.TextColor3        = Color3.fromRGB(200,248,255)
+    nameBox.Font              = Enum.Font.GothamMedium
+    nameBox.TextSize          = 12
+    nameBox.ClearTextOnFocus  = false
+    nameBox.Parent            = inputRow
+    corner(nameBox, 4)
+
+    local addBtn = Instance.new("TextButton")
+    addBtn.Size              = UDim2.fromOffset(66,26)
+    addBtn.Position          = UDim2.new(1,-72,0.5,-13)
+    addBtn.BackgroundColor3  = Color3.fromRGB(0,50,30)
+    addBtn.BorderSizePixel   = 0
+    addBtn.Text              = "+ Add"
+    addBtn.TextColor3        = Color3.fromRGB(80,255,160)
+    addBtn.Font              = Enum.Font.GothamBold
+    addBtn.TextSize          = 11
+    addBtn.AutoButtonColor   = false
+    addBtn.Parent            = inputRow
+    corner(addBtn, 4)
+    stroke(addBtn, Color3.fromRGB(0,200,80), 1, 0.3)
+
+    -- Lista dinámica de jugadores en WL
+    local wlListFrame = Instance.new("Frame")
+    wlListFrame.Size             = UDim2.new(1,0,0,0)
+    wlListFrame.BackgroundTransparency = 1
+    wlListFrame.BorderSizePixel  = 0
+    wlListFrame.AutomaticSize    = Enum.AutomaticSize.Y
+    wlListFrame.Parent           = pageSet
+    local wlLayout = Instance.new("UIListLayout")
+    wlLayout.SortOrder  = Enum.SortOrder.LayoutOrder
+    wlLayout.Padding    = UDim.new(0,4)
+    wlLayout.Parent     = wlListFrame
+
+    local function rebuildWLList()
+        for _, c in ipairs(wlListFrame:GetChildren()) do
+            if c:IsA("Frame") then c:Destroy() end
+        end
+        for _, name in ipairs(Config.Whitelist) do
+            local entry = Instance.new("Frame")
+            entry.Size             = UDim2.new(1,0,0,28)
+            entry.BackgroundColor3 = Color3.fromRGB(5,25,15)
+            entry.BorderSizePixel  = 0
+            entry.Parent           = wlListFrame
+            corner(entry, 4)
+            stroke(entry, Color3.fromRGB(0,180,80), 1, 0.4)
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Size             = UDim2.new(1,-40,1,0)
+            nameLbl.Position         = UDim2.fromOffset(8,0)
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Text             = "✓ "..name
+            nameLbl.TextColor3       = Color3.fromRGB(80,255,160)
+            nameLbl.Font             = Enum.Font.GothamMedium
+            nameLbl.TextSize         = 11
+            nameLbl.TextXAlignment   = Enum.TextXAlignment.Left
+            nameLbl.Parent           = entry
+
+            local delBtn = Instance.new("TextButton")
+            delBtn.Size              = UDim2.fromOffset(30,20)
+            delBtn.Position          = UDim2.new(1,-34,0.5,-10)
+            delBtn.BackgroundColor3  = Color3.fromRGB(60,10,10)
+            delBtn.BorderSizePixel   = 0
+            delBtn.Text              = "✕"
+            delBtn.TextColor3        = Color3.fromRGB(255,80,80)
+            delBtn.Font              = Enum.Font.GothamBold
+            delBtn.TextSize          = 11
+            delBtn.AutoButtonColor   = false
+            delBtn.Parent            = entry
+            corner(delBtn, 4)
+            delBtn.MouseButton1Click:Connect(function()
+                removeWhitelist(name)
+                rebuildWLList()
+            end)
+        end
+    end
+
+    rebuildWLList()
+
+    addBtn.MouseButton1Click:Connect(function()
+        local n = nameBox.Text:match("^%s*(.-)%s*$")
+        if addWhitelist(n) then
+            nameBox.Text = ""
+            rebuildWLList()
+            addBtn.Text = "✅"
+            task.delay(1, function() addBtn.Text = "+ Add" end)
+        else
+            addBtn.Text = "Ya existe"
+            task.delay(1.2, function() addBtn.Text = "+ Add" end)
+        end
+    end)
+end
+
+sectionLabel(pageSet, "Config")
 
 -- Botón guardar config
 do
@@ -661,7 +889,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v3.0\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.0\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -671,40 +899,29 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- FOV CIRCLE (drawing)
+-- FOV CIRCLE + SNAPLINE (Drawing)
 -- ══════════════════════════════════════════════════════════════
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible   = false
-fovCircle.Color     = Color3.fromRGB(255,255,255)
 fovCircle.Thickness = 1.5
 fovCircle.Filled    = false
 
--- Snapline drawing
-local snapLine = Drawing.new("Line")
-snapLine.Visible   = false
-snapLine.Color     = Color3.fromRGB(255,255,255)
-snapLine.Thickness = 1.5
+local snapLineDraw = Drawing.new("Line")
+snapLineDraw.Visible   = false
+snapLineDraw.Thickness = 1.5
 
 -- ══════════════════════════════════════════════════════════════
--- ESP DRAWINGS  (por cada jugador)
+-- ESP DRAWINGS
 -- ══════════════════════════════════════════════════════════════
-local espObjects = {}   -- [player] = { box, nameTag, distTag, healthBar, healthBg, skeleton[] }
+local espObjects = {}
 
 local SKELETON_PAIRS = {
-    {"Head",       "UpperTorso"},
-    {"UpperTorso", "LowerTorso"},
-    {"LowerTorso", "LeftUpperLeg"},
-    {"LeftUpperLeg","LeftLowerLeg"},
-    {"LeftLowerLeg","LeftFoot"},
-    {"LowerTorso", "RightUpperLeg"},
-    {"RightUpperLeg","RightLowerLeg"},
-    {"RightLowerLeg","RightFoot"},
-    {"UpperTorso", "LeftUpperArm"},
-    {"LeftUpperArm","LeftLowerArm"},
-    {"LeftLowerArm","LeftHand"},
-    {"UpperTorso", "RightUpperArm"},
-    {"RightUpperArm","RightLowerArm"},
-    {"RightLowerArm","RightHand"},
+    {"Head","UpperTorso"},
+    {"UpperTorso","LowerTorso"},
+    {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
+    {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
+    {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
+    {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
 }
 
 local function newLine(col)
@@ -714,7 +931,6 @@ local function newLine(col)
     l.Visible   = false
     return l
 end
-
 local function newText(size, col)
     local t = Drawing.new("Text")
     t.Size    = size or 13
@@ -723,7 +939,6 @@ local function newText(size, col)
     t.Visible = false
     return t
 end
-
 local function newRect(col, fill)
     local r = Drawing.new("Square")
     r.Color     = col  or Color3.fromRGB(0,255,200)
@@ -765,12 +980,11 @@ Players.PlayerAdded:Connect(createEspForPlayer)
 Players.PlayerRemoving:Connect(removeEspForPlayer)
 
 -- ══════════════════════════════════════════════════════════════
--- SILENT AIM  —  LÓGICA PRINCIPAL
+-- SILENT AIM — LÓGICA ARREGLADA
 -- ══════════════════════════════════════════════════════════════
 local function getTargetPart(char)
     local part = Config.TargetPart
     if part == "Random" then
-        -- Random inteligente: 50% UpperTorso, 30% Head, 20% LowerTorso
         local r = math.random(100)
         if r <= 30 then
             part = "Head"
@@ -785,14 +999,14 @@ local function getTargetPart(char)
 end
 
 local function isVisible(part)
-    local origin  = camera.CFrame.Position
-    local dir     = (part.Position - origin)
-    local result  = Workspace:Raycast(origin, dir,
-        RaycastParams.new())  -- sin filtros por simplicidad
+    local origin = camera.CFrame.Position
+    local dir    = (part.Position - origin)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {player.Character}
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local result = Workspace:Raycast(origin, dir, params)
     if not result then return true end
-    local hit = result.Instance
-    -- Si golpea una parte del jugador objetivo, está visible
-    return hit:IsDescendantOf(part.Parent)
+    return result.Instance:IsDescendantOf(part.Parent)
 end
 
 local function getBestTarget()
@@ -801,73 +1015,80 @@ local function getBestTarget()
     local bestD   = math.huge
 
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            local char = p.Character
-            if char then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if hum and hum.Health > 0 and root then
-                    local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
-                    if onScreen then
-                        local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-                        if dist2D <= Config.FovRadius then
-                            if Config.VisibleCheck then
-                                local ok, vis = pcall(isVisible, root)
-                                if ok and not vis then continue end
-                            end
-                            if dist2D < bestD then
-                                bestD = dist2D
-                                bestP = p
-                            end
-                        end
-                    end
-                end
-            end
+        if p == player then continue end
+        -- WHITELIST: si está en la lista, skip
+        if isWhitelisted(p) then continue end
+
+        local char = p.Character
+        if not char then continue end
+        local hum  = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not hum or hum.Health <= 0 or not root then continue end
+
+        local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+        if not onScreen then continue end
+
+        local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+        if dist2D > Config.FovRadius then continue end
+
+        if Config.VisibleCheck then
+            local ok, vis = pcall(isVisible, root)
+            if ok and not vis then continue end
+        end
+
+        if dist2D < bestD then
+            bestD = dist2D
+            bestP = p
         end
     end
     return bestP
 end
 
--- Hook en el raycast del mouse para silent aim
-local oldRaycast = Workspace.FindPartOnRay
-if syn and syn.protect_gui then syn.protect_gui(gui) end
-
--- Método estándar de silent aim para ejecutores:
+-- Hook metatables para silent aim
 local mt = getrawmetatable and getrawmetatable(game)
 if mt then
-    local oldIndex = mt.__index
     local oldNamecall
-
     if pcall(function() return mt.__namecall end) then
-        local success, msg = pcall(function()
+        local ok, msg = pcall(function()
             setreadonly(mt, false)
-
             oldNamecall = mt.__namecall
             mt.__namecall = newcclosure(function(self, ...)
                 local method = getnamecallmethod()
+
                 if Config.SilentAimEnabled
                 and (method == "FindPartOnRayWithIgnoreList"
                   or method == "FindPartOnRay"
                   or method == "Raycast") then
-                    local chance = math.random(100)
-                    if chance <= Config.HitChance then
+
+                    if math.random(100) <= Config.HitChance then
                         local target = getBestTarget()
                         if target and target.Character then
                             local part = getTargetPart(target.Character)
                             if part then
                                 local args = {...}
                                 if method == "Raycast" then
-                                    -- RaycastParams: reemplaza dirección
                                     local origin = camera.CFrame.Position
                                     local dir    = (part.Position - origin)
+                                    -- Manipulation: añade ruido leve para evadir AC
+                                    if Config.Manipulation then
+                                        dir = dir + Vector3.new(
+                                            math.random(-5,5)*0.01,
+                                            math.random(-5,5)*0.01,
+                                            math.random(-5,5)*0.01)
+                                    end
                                     args[1] = origin
                                     args[2] = dir
                                 else
-                                    -- Ray clásico
                                     local ray = args[1]
                                     if typeof(ray) == "Ray" then
-                                        args[1] = Ray.new(ray.Origin,
-                                            (part.Position - ray.Origin).Unit * ray.Direction.Magnitude)
+                                        local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
+                                        if Config.Manipulation then
+                                            newDir = newDir + Vector3.new(
+                                                math.random(-5,5)*0.01,
+                                                math.random(-5,5)*0.01,
+                                                math.random(-5,5)*0.01)
+                                        end
+                                        args[1] = Ray.new(ray.Origin, newDir)
                                     end
                                 end
                                 return oldNamecall(self, table.unpack(args))
@@ -877,17 +1098,34 @@ if mt then
                 end
                 return oldNamecall(self, ...)
             end)
-
             setreadonly(mt, true)
         end)
-        if not success then
-            warn("[NEXUS] Silent Aim hook no disponible en este ejecutor: "..tostring(msg))
+        if not ok then
+            warn("[NEXUS] Silent Aim hook no disponible: "..tostring(msg))
         end
     end
 end
 
+-- Round Toggles: detecta fin de ronda (Humanoid muriendo)
+if Config.RoundToggles then
+    player.CharacterAdded:Connect(function(char)
+        local hum = char:WaitForChild("Humanoid")
+        hum.Died:Connect(function()
+            -- pequeño delay para no interferir con respawn
+            task.delay(0.5, function()
+                if Config.RoundToggles then
+                    Config.SilentAimEnabled = false
+                    Config.EspEnabled       = false
+                    saveConfig()
+                    syncFAB()
+                end
+            end)
+        end)
+    end)
+end
+
 -- ══════════════════════════════════════════════════════════════
--- RENDER STEP  —  ESP + FOV + Snapline
+-- RENDER STEP — ESP + FOV + Snapline con colores dinámicos
 -- ══════════════════════════════════════════════════════════════
 RunService.RenderStepped:Connect(function()
     local vpSize   = camera.ViewportSize
@@ -900,6 +1138,18 @@ RunService.RenderStepped:Connect(function()
     if fovCircle.Visible then
         fovCircle.Position = center2D
         fovCircle.Radius   = Config.FovRadius
+        fovCircle.Color    = Color3.fromRGB(Config.FovColorR, Config.FovColorG, Config.FovColorB)
+    end
+
+    -- Colores ESP del frame actual
+    local boxCol  = Color3.fromRGB(Config.BoxColorR,  Config.BoxColorG,  Config.BoxColorB)
+    local skelCol = Color3.fromRGB(Config.SkelColorR, Config.SkelColorG, Config.SkelColorB)
+    local namCol  = Color3.fromRGB(Config.NameColorR, Config.NameColorG, Config.NameColorB)
+    local snapCol = Color3.fromRGB(Config.SnapColorR, Config.SnapColorG, Config.SnapColorB)
+
+    local snapTarget = nil
+    if Config.Snapline and Config.SilentAimEnabled then
+        snapTarget = getBestTarget()
     end
 
     -- ESP
@@ -907,11 +1157,11 @@ RunService.RenderStepped:Connect(function()
         local active = Config.EspEnabled and p.Character ~= nil
         local char   = p.Character
 
-        local allOff = function()
-            obj.box.Visible = false; obj.nameTag.Visible = false
-            obj.distTag.Visible = false; obj.healthBar.Visible = false
-            obj.healthBg.Visible = false
-            for _, l in ipairs(obj.skeleton) do l.Visible = false end
+        local function allOff()
+            obj.box.Visible=false; obj.nameTag.Visible=false
+            obj.distTag.Visible=false; obj.healthBar.Visible=false
+            obj.healthBg.Visible=false
+            for _, l in ipairs(obj.skeleton) do l.Visible=false end
         end
 
         if not active then allOff(); continue end
@@ -923,72 +1173,63 @@ RunService.RenderStepped:Connect(function()
         local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
         if not onScreen then allOff(); continue end
 
-        -- Distancia 3D
         local dist3D = myRoot
-            and math.floor((root.Position - myRoot.Position).Magnitude)
-            or 0
-
+            and math.floor((root.Position - myRoot.Position).Magnitude) or 0
         if dist3D > Config.EspMaxDist then allOff(); continue end
 
         local sp = Vector2.new(screenPos.X, screenPos.Y)
 
-        -- Calcular tamaño del box
         local head = char:FindFirstChild("Head")
-        local foot = char:FindFirstChild("LeftFoot")
-            or char:FindFirstChild("HumanoidRootPart")
+        local foot = char:FindFirstChild("LeftFoot") or root
         local topSP, botSP
         if head and foot then
-            local t, _ = camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.6,0))
-            local b, _ = camera:WorldToViewportPoint(foot.Position - Vector3.new(0,0.2,0))
+            local t = camera:WorldToViewportPoint(head.Position+Vector3.new(0,0.6,0))
+            local b = camera:WorldToViewportPoint(foot.Position-Vector3.new(0,0.2,0))
             topSP = Vector2.new(t.X, t.Y)
             botSP = Vector2.new(b.X, b.Y)
         else
-            topSP = sp - Vector2.new(0, 50)
-            botSP = sp + Vector2.new(0, 50)
+            topSP = sp-Vector2.new(0,50); botSP = sp+Vector2.new(0,50)
         end
 
-        local boxH = math.abs(botSP.Y - topSP.Y)
-        local boxW = boxH * 0.45
+        local boxH = math.abs(botSP.Y-topSP.Y)
+        local boxW = boxH*0.45
 
         -- Box
         obj.box.Visible = Config.EspBox
+        obj.box.Color   = boxCol
         if Config.EspBox then
-            obj.box.Position = Vector2.new(sp.X - boxW/2, topSP.Y)
+            obj.box.Position = Vector2.new(sp.X-boxW/2, topSP.Y)
             obj.box.Size     = Vector2.new(boxW, boxH)
         end
 
         -- Nombre
-        obj.nameTag.Visible  = Config.EspNames
+        obj.nameTag.Visible = Config.EspNames
+        obj.nameTag.Color   = namCol
         if Config.EspNames then
             obj.nameTag.Text     = p.DisplayName
-            obj.nameTag.Position = Vector2.new(sp.X - boxW/2, topSP.Y - 18)
+            obj.nameTag.Position = Vector2.new(sp.X-boxW/2, topSP.Y-18)
         end
 
         -- Distancia
-        obj.distTag.Visible  = Config.EspDistance
+        obj.distTag.Visible = Config.EspDistance
         if Config.EspDistance then
             obj.distTag.Text     = dist3D.."m"
-            obj.distTag.Position = Vector2.new(sp.X - boxW/2, botSP.Y + 2)
+            obj.distTag.Position = Vector2.new(sp.X-boxW/2, botSP.Y+2)
         end
 
         -- Health Bar
-        local healthPct = hum.Health / math.max(hum.MaxHealth, 1)
+        local hp = hum.Health/math.max(hum.MaxHealth,1)
         obj.healthBg.Visible  = Config.EspHealthBar
         obj.healthBar.Visible = Config.EspHealthBar
         if Config.EspHealthBar then
-            local barX = sp.X - boxW/2 - 8
-            obj.healthBg.Position  = Vector2.new(barX, topSP.Y)
-            obj.healthBg.Size      = Vector2.new(4, boxH)
-            obj.healthBg.Color     = Color3.fromRGB(30,30,30)
-
-            local barH = boxH * healthPct
-            local healthColor = Color3.fromRGB(
-                math.floor(255*(1-healthPct)),
-                math.floor(255*healthPct),
-                0)
-            obj.healthBar.Position = Vector2.new(barX, topSP.Y + boxH - barH)
+            local bx = sp.X-boxW/2-8
+            obj.healthBg.Position = Vector2.new(bx, topSP.Y)
+            obj.healthBg.Size     = Vector2.new(4, boxH)
+            obj.healthBg.Color    = Color3.fromRGB(30,30,30)
+            local barH = boxH*hp
+            obj.healthBar.Position = Vector2.new(bx, topSP.Y+boxH-barH)
             obj.healthBar.Size     = Vector2.new(4, barH)
-            obj.healthBar.Color    = healthColor
+            obj.healthBar.Color    = Color3.fromRGB(math.floor(255*(1-hp)),math.floor(255*hp),0)
         end
 
         -- Skeleton
@@ -996,33 +1237,31 @@ RunService.RenderStepped:Connect(function()
             local pA = char:FindFirstChild(pair[1])
             local pB = char:FindFirstChild(pair[2])
             local line = obj.skeleton[si]
+            line.Color = skelCol
             if Config.EspSkeleton and pA and pB then
                 local sA, onA = camera:WorldToViewportPoint(pA.Position)
                 local sB, onB = camera:WorldToViewportPoint(pB.Position)
                 line.Visible = onA and onB
                 if onA and onB then
-                    line.From = Vector2.new(sA.X, sA.Y)
-                    line.To   = Vector2.new(sB.X, sB.Y)
+                    line.From = Vector2.new(sA.X,sA.Y)
+                    line.To   = Vector2.new(sB.X,sB.Y)
                 end
             else
                 line.Visible = false
             end
         end
 
-        -- Snapline
-        if Config.Snapline and Config.SilentAimEnabled then
-            local target = getBestTarget()
-            if target == p then
-                snapLine.Visible = true
-                snapLine.From    = center2D
-                snapLine.To      = sp
-            end
+        -- Snapline al target
+        if snapTarget == p then
+            snapLineDraw.Visible = true
+            snapLineDraw.From    = center2D
+            snapLineDraw.To      = sp
+            snapLineDraw.Color   = snapCol
         end
     end
 
-    -- Apagar snapline si no hay target o está desactivado
-    if not (Config.Snapline and Config.SilentAimEnabled) then
-        snapLine.Visible = false
+    if not (Config.Snapline and Config.SilentAimEnabled and snapTarget) then
+        snapLineDraw.Visible = false
     end
 end)
 
@@ -1031,7 +1270,6 @@ end)
 -- ══════════════════════════════════════════════════════════════
 do
     local dragging, dragStart, startPos = false, nil, nil
-
     local dragHandle = Instance.new("TextButton")
     dragHandle.Size              = UDim2.new(1,0,0,88)
     dragHandle.Position          = UDim2.fromOffset(0,0)
@@ -1085,21 +1323,21 @@ do
     rh.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
-            resizing = true; resizeStart = inp.Position; startSz = main.AbsoluteSize
+            resizing=true; resizeStart=inp.Position; startSz=main.AbsoluteSize
         end
     end)
     UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
-            resizing = false
+            resizing=false
         end
     end)
     UserInputService.InputChanged:Connect(function(inp)
         if resizing and (inp.UserInputType == Enum.UserInputType.MouseMovement
         or inp.UserInputType == Enum.UserInputType.Touch) then
             local d  = inp.Position - resizeStart
-            local nW = math.clamp(startSz.X + d.X, MIN_W, 700)
-            local nH = math.clamp(startSz.Y + d.Y, MIN_H, 800)
+            local nW = math.clamp(startSz.X+d.X, MIN_W, 700)
+            local nH = math.clamp(startSz.Y+d.Y, MIN_H, 800)
             main.Size = UDim2.fromOffset(nW, nH)
         end
     end)
@@ -1140,6 +1378,14 @@ activeDot.ZIndex            = 21
 activeDot.Parent            = floating
 corner(activeDot, 12)
 
+function syncFAB()
+    local on = Config.SilentAimEnabled or Config.EspEnabled
+    activeDot.BackgroundColor3 = on
+        and Color3.fromRGB(85,255,165) or Color3.fromRGB(90,110,120)
+    floatStroke.Color = on
+        and Color3.fromRGB(85,255,165) or Color3.fromRGB(0,200,255)
+end
+
 do
     local fabDragging, fabDragStart, fabStartPos = false, nil, nil
     local fabMoved, holding, holdStarted = false, false, 0
@@ -1148,19 +1394,16 @@ do
     floating.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
-            fabDragging = true; fabMoved = false
-            fabDragStart = inp.Position; fabStartPos = floating.Position
-            holding = true; holdStarted = os.clock()
+            fabDragging=true; fabMoved=false
+            fabDragStart=inp.Position; fabStartPos=floating.Position
+            holding=true; holdStarted=os.clock()
             task.delay(HOLD_TIME, function()
                 if holding and not fabMoved then
                     Config.SilentAimEnabled = not Config.SilentAimEnabled
-                    saveConfig()
-                    syncFAB()
-                    TweenService:Create(floating, TweenInfo.new(0.1),
-                        {Size=UDim2.fromOffset(78,78)}):Play()
+                    saveConfig(); syncFAB()
+                    TweenService:Create(floating,TweenInfo.new(0.1),{Size=UDim2.fromOffset(78,78)}):Play()
                     task.delay(0.12, function()
-                        TweenService:Create(floating, TweenInfo.new(0.15),
-                            {Size=UDim2.fromOffset(68,68)}):Play()
+                        TweenService:Create(floating,TweenInfo.new(0.15),{Size=UDim2.fromOffset(68,68)}):Play()
                     end)
                 end
             end)
@@ -1170,11 +1413,11 @@ do
         if fabDragging and (inp.UserInputType == Enum.UserInputType.MouseMovement
         or inp.UserInputType == Enum.UserInputType.Touch) then
             local delta = inp.Position - fabDragStart
-            if delta.Magnitude > 5 then fabMoved = true; holding = false end
+            if delta.Magnitude > 5 then fabMoved=true; holding=false end
             if fabMoved then
                 local sc = gui.AbsoluteSize
-                local nx = math.clamp(fabStartPos.X.Offset + delta.X, 4, sc.X-72)
-                local ny = math.clamp(fabStartPos.Y.Offset + delta.Y, 4, sc.Y-72)
+                local nx = math.clamp(fabStartPos.X.Offset+delta.X, 4, sc.X-72)
+                local ny = math.clamp(fabStartPos.Y.Offset+delta.Y, 4, sc.Y-72)
                 floating.Position = UDim2.new(0,nx,0,ny)
             end
         end
@@ -1183,23 +1426,15 @@ do
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
             if fabDragging then
-                local held = os.clock() - holdStarted
-                holding = false
+                local held = os.clock()-holdStarted
+                holding=false
                 if not fabMoved and held < HOLD_TIME then
                     main.Visible = not main.Visible
                 end
-                fabDragging = false; fabMoved = false
+                fabDragging=false; fabMoved=false
             end
         end
     end)
-end
-
-function syncFAB()
-    local on = Config.SilentAimEnabled or Config.EspEnabled
-    activeDot.BackgroundColor3 = on
-        and Color3.fromRGB(85,255,165) or Color3.fromRGB(90,110,120)
-    floatStroke.Color = on
-        and Color3.fromRGB(85,255,165) or Color3.fromRGB(0,200,255)
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -1234,4 +1469,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v3.0] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.0] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
