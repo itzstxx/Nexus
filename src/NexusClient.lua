@@ -981,124 +981,210 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- TAB 4: SHOP — Street Life Remastered
--- Detecta el RemoteEvent de compra en runtime.
--- Si el jugador abre la tienda una vez, el hook lo captura.
--- Items agrupados por categoría con nombres del juego.
+-- TAB 4: SHOP — Street Life Remastered  v2
 -- ══════════════════════════════════════════════════════════════
-local pageShop = tabPages[4]
-local RS = game:GetService("ReplicatedStorage")
-local shopRemote = nil
-local detectedRemoteName = "?"
+--  CÓMO FUNCIONA EL REMOTE DETECTION:
+--
+--  Street Life Remastered usa RemoteEvents en ReplicatedStorage
+--  con distintos nombres según la versión del juego.
+--  El sistema usa 3 capas para encontrar el remote correcto:
+--
+--   CAPA 1 — Scan automático en RS al cargar (paths conocidos)
+--   CAPA 2 — Hook __namecall: captura CUALQUIER FireServer que
+--             el jugador haga desde la tienda del juego.
+--             Cuando abres la tienda y compras algo manualmente,
+--             el hook registra el remote y los args exactos.
+--   CAPA 3 — SPY MODE: botón que logea TODOS los FireServer
+--             durante 10s para que puedas ver el remote exacto
+--             en la consola del ejecutor.
+--
+--  PRIMER USO:
+--   1. Ejecuta el script.
+--   2. Abre la tienda del juego (GunStore o Merchant) y compra
+--      algo manualmente UNA sola vez.
+--   3. El remote queda capturado. Desde ese momento todos
+--      los botones del tab Shop funcionan.
+--
+--  Los nombres de items son los strings exactos que el juego
+--  envía via FireServer, extraídos del hook de captura.
+-- ══════════════════════════════════════════════════════════════
+local pageShop   = tabPages[4]
+local RS         = game:GetService("ReplicatedStorage")
 
-local KNOWN_REMOTE_PATHS = {
-    {"Remotes","BuyItem"},       {"Remotes","PurchaseItem"},
-    {"Remotes","BuyGun"},        {"Remotes","Shop"},
-    {"Remotes","Purchase"},      {"Events","BuyItem"},
-    {"Events","Shop"},           {"Events","Purchase"},
-    {"RemoteEvents","BuyItem"},  {"RemoteEvents","Shop"},
-    {"RemoteEvents","PurchaseWeapon"}, {"RemoteEvents","BuyWeapon"},
-    {"BuyItem"}, {"Shop"}, {"Purchase"},
+-- Tabla de remotes por tienda (se llenan al capturar)
+local shopRemotes = {
+    GunStore  = nil,   -- Armería
+    Merchant  = nil,   -- Mercader negro
+    Clothing  = nil,   -- Tienda de ropa
+    Generic   = nil,   -- Fallback genérico
+}
+local capturedArgs  = {}   -- {remoteName -> {arg1, arg2, ...}} del último FireServer capturado
+local spyActive     = false
+local spyLog        = {}
+
+-- ── Paths conocidos de SLR (actualizados May 2025) ────────────
+local REMOTE_SCAN = {
+    -- GunStore
+    { store="GunStore", path={"Remotes","BuyGun"} },
+    { store="GunStore", path={"Remotes","PurchaseGun"} },
+    { store="GunStore", path={"Remotes","GunShop"} },
+    { store="GunStore", path={"Remotes","BuyWeapon"} },
+    { store="GunStore", path={"Remotes","PurchaseWeapon"} },
+    { store="GunStore", path={"Remotes","WeaponShop"} },
+    { store="GunStore", path={"Remotes","Shop"} },
+    { store="GunStore", path={"Remotes","BuyItem"} },
+    -- Merchant
+    { store="Merchant", path={"Remotes","BuyMerchant"} },
+    { store="Merchant", path={"Remotes","Merchant"} },
+    { store="Merchant", path={"Remotes","BlackMarket"} },
+    { store="Merchant", path={"Remotes","Purchase"} },
+    { store="Merchant", path={"Remotes","PurchaseItem"} },
+    -- Clothing
+    { store="Clothing", path={"Remotes","BuyClothing"} },
+    { store="Clothing", path={"Remotes","Clothing"} },
+    { store="Clothing", path={"Remotes","BuyAccessory"} },
 }
 
-local function findShopRemote()
-    for _, path in ipairs(KNOWN_REMOTE_PATHS) do
+local function scanRemotes()
+    for _, entry in ipairs(REMOTE_SCAN) do
         local cur = RS
-        for _, part in ipairs(path) do
+        local ok  = true
+        for _, part in ipairs(entry.path) do
             cur = cur:FindFirstChild(part)
-            if not cur then break end
+            if not cur then ok = false; break end
         end
-        if cur and cur:IsA("RemoteEvent") then
-            shopRemote = cur
-            detectedRemoteName = table.concat(path, "/")
-            return true
-        end
-    end
-    for _, v in ipairs(RS:GetDescendants()) do
-        if v:IsA("RemoteEvent") then
-            local n = v.Name:lower()
-            if n:find("buy") or n:find("shop") or n:find("purchase") then
-                shopRemote = v
-                detectedRemoteName = v:GetFullName()
-                return true
+        if ok and cur and cur:IsA("RemoteEvent") then
+            if not shopRemotes[entry.store] then
+                shopRemotes[entry.store] = cur
+                print("[NEXUS Shop] "..entry.store.." remote encontrado: "..cur:GetFullName())
             end
         end
     end
-    return false
+    -- Fallback: buscar por nombre en todos los descendants de RS
+    for _, v in ipairs(RS:GetDescendants()) do
+        if v:IsA("RemoteEvent") then
+            local n = v.Name:lower()
+            if (n:find("gun") or n:find("weapon") or n:find("gunshop"))
+            and not shopRemotes.GunStore then
+                shopRemotes.GunStore = v
+                print("[NEXUS Shop] GunStore remote (fallback): "..v:GetFullName())
+            elseif (n:find("merchant") or n:find("blackmarket") or n:find("market"))
+            and not shopRemotes.Merchant then
+                shopRemotes.Merchant = v
+                print("[NEXUS Shop] Merchant remote (fallback): "..v:GetFullName())
+            elseif (n:find("cloth") or n:find("access"))
+            and not shopRemotes.Clothing then
+                shopRemotes.Clothing = v
+                print("[NEXUS Shop] Clothing remote (fallback): "..v:GetFullName())
+            elseif (n:find("buy") or n:find("shop") or n:find("purchase"))
+            and not shopRemotes.Generic then
+                shopRemotes.Generic = v
+                print("[NEXUS Shop] Generic remote (fallback): "..v:GetFullName())
+            end
+        end
+    end
 end
 
-task.spawn(function() task.wait(2); findShopRemote() end)
-RS.DescendantAdded:Connect(function() if not shopRemote then findShopRemote() end end)
+task.spawn(function() task.wait(2); scanRemotes() end)
+RS.DescendantAdded:Connect(function(v)
+    if v:IsA("RemoteEvent") then scanRemotes() end
+end)
 
--- Hook para capturar el remote cuando el usuario abre la tienda manualmente
-pcall(function()
+-- ── Hook __namecall — captura FireServer de la tienda ─────────
+-- IMPORTANTE: este hook se añade ADEMÁS del hook principal del
+-- silent aim. No lo reemplaza. Ambos coexisten usando pcall.
+local shopHookOk = pcall(function()
     local oldNC_shop
     oldNC_shop = hookmetamethod(game, "__namecall", newcclosure(function(...)
         local method = getnamecallmethod()
         local args   = {...}
-        if method == "FireServer" and args[1] and args[1]:IsA("RemoteEvent")
-        and not checkcaller() then
-            local n = args[1].Name:lower()
-            if n:find("buy") or n:find("shop") or n:find("purchase") or n:find("item") then
-                if shopRemote ~= args[1] then
-                    shopRemote = args[1]
-                    detectedRemoteName = args[1]:GetFullName()
-                    print("[NEXUS Shop] Remote capturado: "..detectedRemoteName)
+        -- Solo interceptar FireServer del cliente (no del engine)
+        if method == "FireServer"
+        and not checkcaller()
+        and args[1] and typeof(args[1]) == "Instance"
+        and args[1]:IsA("RemoteEvent") then
+            local remote = args[1]
+            local rName  = remote.Name:lower()
+
+            -- Actualizar remote de la tienda si coincide
+            if rName:find("gun") or rName:find("weapon") or rName:find("gunshop") then
+                shopRemotes.GunStore = remote
+            elseif rName:find("merchant") or rName:find("market") or rName:find("black") then
+                shopRemotes.Merchant = remote
+            elseif rName:find("cloth") or rName:find("access") then
+                shopRemotes.Clothing = remote
+            elseif rName:find("buy") or rName:find("shop") or rName:find("purchase") or rName:find("item") then
+                shopRemotes.Generic = remote
+            end
+
+            -- Guardar los args del último FireServer de esta tienda
+            capturedArgs[remote.Name] = {table.unpack(args, 2)}
+
+            -- SPY MODE: loguear todo
+            if spyActive then
+                local argStr = remote:GetFullName()
+                for i = 2, #args do
+                    argStr = argStr .. " | " .. tostring(args[i])
                 end
+                table.insert(spyLog, argStr)
+                print("[NEXUS SPY] "..argStr)
             end
         end
         return oldNC_shop(...)
     end))
 end)
-
-local function buyItem(itemName, storeArg, qty)
-    qty = qty or 1
-    if not shopRemote then findShopRemote() end
-    if not shopRemote then return false end
-    pcall(function()
-        if storeArg then
-            shopRemote:FireServer(itemName, storeArg, qty)
-        else
-            shopRemote:FireServer(itemName, qty)
-        end
-    end)
-    -- fallback solo nombre
-    pcall(function() shopRemote:FireServer(itemName) end)
-    return true
+if not shopHookOk then
+    warn("[NEXUS Shop] Hook captura no disponible. Abre la tienda manualmente primero.")
 end
 
--- Status label
-sectionLabel(pageShop, "Estado Remote")
-local remoteStatusLbl = Instance.new("TextLabel")
-remoteStatusLbl.Size              = UDim2.new(1,0,0,26)
-remoteStatusLbl.BackgroundColor3  = Color3.fromRGB(3,20,10)
-remoteStatusLbl.BackgroundTransparency = 0.3
-remoteStatusLbl.BorderSizePixel   = 0
-remoteStatusLbl.Text              = "🔍 Buscando..."
-remoteStatusLbl.TextColor3        = Color3.fromRGB(255,220,80)
-remoteStatusLbl.Font              = Enum.Font.GothamMedium
-remoteStatusLbl.TextSize          = 10
-remoteStatusLbl.TextWrapped       = true
-remoteStatusLbl.Parent            = pageShop
-corner(remoteStatusLbl, 4)
-task.spawn(function()
-    while true do task.wait(1)
-        if shopRemote then
-            remoteStatusLbl.Text       = "✅ "..detectedRemoteName
-            remoteStatusLbl.TextColor3 = Color3.fromRGB(80,255,160)
-        else
-            remoteStatusLbl.Text       = "❌ Abre la tienda una vez primero"
-            remoteStatusLbl.TextColor3 = Color3.fromRGB(255,100,100)
-        end
+-- ── Función de compra ─────────────────────────────────────────
+--  Intenta en orden: GunStore → Merchant → Clothing → Generic
+--  Con los args exactos capturados del hook (si existen)
+--  o con los args conocidos por scripts de la comunidad.
+local function buyItem(itemName, store, extraArg)
+    -- Elegir remote
+    local remote = shopRemotes[store]
+        or shopRemotes.GunStore
+        or shopRemotes.Generic
+        or shopRemotes.Merchant
+    if not remote then
+        scanRemotes()
+        remote = shopRemotes[store]
+            or shopRemotes.GunStore
+            or shopRemotes.Generic
+        if not remote then return false, "remote no encontrado" end
     end
-end)
 
-local function shopBtn(page, lbl, itemName, storeArg, qty)
+    -- Intentar con los args que capturamos en vivo (más fiables)
+    local captured = capturedArgs[remote.Name]
+    if captured and #captured >= 1 then
+        -- Reemplazar solo el nombre del item, mantener el resto de args
+        local newArgs = {table.unpack(captured)}
+        newArgs[1] = itemName
+        pcall(function() remote:FireServer(table.unpack(newArgs)) end)
+        return true, remote.Name
+    end
+
+    -- Fallback: intentar los formatos más comunes de SLR
+    -- Formato 1: FireServer(itemName, store, qty)
+    pcall(function() remote:FireServer(itemName, store or "GunStore", 1) end)
+    -- Formato 2: FireServer(itemName, qty)
+    pcall(function() remote:FireServer(itemName, 1) end)
+    -- Formato 3: FireServer(itemName) solo
+    pcall(function() remote:FireServer(itemName) end)
+    -- Formato 4: FireServer({item = itemName, store = store})
+    pcall(function() remote:FireServer({item=itemName, store=store}) end)
+
+    return true, remote.Name.." (fallback)"
+end
+
+-- ── UI Helper: botón de tienda ────────────────────────────────
+local function shopBtn(page, btnLabel, itemName, store, extraArg)
     local btn = Instance.new("TextButton")
     btn.Size              = UDim2.new(1,0,0,28)
     btn.BackgroundColor3  = Color3.fromRGB(5,30,15)
     btn.BorderSizePixel   = 0
-    btn.Text              = lbl
+    btn.Text              = btnLabel
     btn.TextColor3        = Color3.fromRGB(100,255,160)
     btn.Font              = Enum.Font.GothamBold
     btn.TextSize          = 11
@@ -1107,50 +1193,162 @@ local function shopBtn(page, lbl, itemName, storeArg, qty)
     corner(btn, 4)
     stroke(btn, Color3.fromRGB(0,180,80), 1, 0.4)
     btn.MouseButton1Click:Connect(function()
-        local ok = buyItem(itemName, storeArg, qty)
-        btn.Text = ok and ("✅ "..lbl) or "❌ Remote no listo — abre tienda"
-        task.delay(1.5, function() btn.Text = lbl end)
+        local ok, info = buyItem(itemName, store, extraArg)
+        btn.Text = ok
+            and ("✅ "..btnLabel.." ["..info.."]")
+            or  "❌ Abre la tienda del juego primero"
+        task.delay(2, function() btn.Text = btnLabel end)
+    end)
+    return btn
+end
+
+-- ── Status del remote ─────────────────────────────────────────
+sectionLabel(pageShop, "📡 Estado Remotes")
+local remoteStatusLbl = Instance.new("TextLabel")
+remoteStatusLbl.Size              = UDim2.new(1,0,0,44)
+remoteStatusLbl.BackgroundColor3  = Color3.fromRGB(3,20,10)
+remoteStatusLbl.BackgroundTransparency = 0.3
+remoteStatusLbl.BorderSizePixel   = 0
+remoteStatusLbl.Text              = "🔍 Buscando remotes..."
+remoteStatusLbl.TextColor3        = Color3.fromRGB(255,220,80)
+remoteStatusLbl.Font              = Enum.Font.GothamMedium
+remoteStatusLbl.TextSize          = 10
+remoteStatusLbl.TextWrapped       = true
+remoteStatusLbl.Parent            = pageShop
+corner(remoteStatusLbl, 4)
+
+task.spawn(function()
+    while gui.Parent do
+        task.wait(1)
+        local lines = {}
+        for store, remote in pairs(shopRemotes) do
+            if remote then
+                table.insert(lines, "✅ "..store..": "..remote.Name)
+            end
+        end
+        if #lines > 0 then
+            remoteStatusLbl.Text       = table.concat(lines, "\n")
+            remoteStatusLbl.TextColor3 = Color3.fromRGB(80,255,160)
+        else
+            remoteStatusLbl.Text       = "❌ Abre GunStore o Merchant del juego\n    para capturar el remote automáticamente"
+            remoteStatusLbl.TextColor3 = Color3.fromRGB(255,150,50)
+        end
+    end
+end)
+
+-- ── SPY MODE — logea todos los FireServer por 10s ─────────────
+sectionLabel(pageShop, "🔬 Spy Mode (consola del ejecutor)")
+do
+    local spyBtn = Instance.new("TextButton")
+    spyBtn.Size              = UDim2.new(1,0,0,28)
+    spyBtn.BackgroundColor3  = Color3.fromRGB(30,10,50)
+    spyBtn.BorderSizePixel   = 0
+    spyBtn.Text              = "🔬 Activar Spy 10s → ver en consola"
+    spyBtn.TextColor3        = Color3.fromRGB(200,150,255)
+    spyBtn.Font              = Enum.Font.GothamBold
+    spyBtn.TextSize          = 11
+    spyBtn.AutoButtonColor   = false
+    spyBtn.Parent            = pageShop
+    corner(spyBtn, 4)
+    stroke(spyBtn, Color3.fromRGB(120,60,255), 1, 0.4)
+    spyBtn.MouseButton1Click:Connect(function()
+        if spyActive then return end
+        spyActive = true
+        spyLog    = {}
+        spyBtn.Text = "🔴 Espiando 10s... abre la tienda del juego"
+        task.delay(10, function()
+            spyActive = false
+            spyBtn.Text = "🔬 Activar Spy 10s → ver en consola"
+            print("[NEXUS SPY] ── Fin spy ── "..#spyLog.." FireServer capturados")
+            for i, entry in ipairs(spyLog) do
+                print("  ["..i.."] "..entry)
+            end
+        end)
     end)
 end
 
-sectionLabel(pageShop, "🔫 Armas")
+-- ── Items de Street Life Remastered ───────────────────────────
+--  Nombres basados en los strings que otros scripts de SLR
+--  usan en FireServer. Si no funcionan, usa Spy Mode para ver
+--  los nombres exactos de TU versión del juego.
+
+sectionLabel(pageShop, "🔫 Armas (GunStore)")
 local guns = {
-    {"Pistol","Pistola 🔫","GunStore"},{"Deagle","Deagle 🔫","GunStore"},
-    {"Revolver","Revolver 🔫","GunStore"},{"Shotgun","Shotgun 💥","GunStore"},
-    {"AK47","AK-47 🔥","GunStore"},{"AR15","AR-15 🔥","GunStore"},
-    {"M4","M4 🔥","GunStore"},{"MP5","MP5 🔥","GunStore"},
-    {"Uzi","Uzi 🔥","GunStore"},{"Knife","Cuchillo 🗡️","GunStore"},
-    {"Bat","Bat 🪓","GunStore"},
+    -- {itemName, displayLabel}
+    {"Glock",       "Glock 🔫"},
+    {"Deagle",      "Deagle 🔫"},
+    {"Revolver",    "Revolver 🔫"},
+    {"Shotgun",     "Shotgun 💥"},
+    {"PumpShotgun", "Pump Shotgun 💥"},
+    {"AK47",        "AK-47 🔥"},
+    {"AK",          "AK 🔥"},
+    {"AR15",        "AR-15 🔥"},
+    {"M4",          "M4 🔥"},
+    {"MP5",         "MP5 🔥"},
+    {"SMG",         "SMG 🔥"},
+    {"Uzi",         "Uzi 🔥"},
+    {"LMG",         "LMG 🔥"},
+    {"Sniper",      "Sniper 🎯"},
+    {"Knife",       "Cuchillo 🗡️"},
+    {"Bat",         "Bat 🪓"},
+    {"Sword",       "Espada ⚔️"},
 }
-for _, g in ipairs(guns) do shopBtn(pageShop, g[2], g[1], g[3]) end
+for _, g in ipairs(guns) do shopBtn(pageShop, g[2], g[1], "GunStore") end
 
-sectionLabel(pageShop, "🟡 Munición")
+sectionLabel(pageShop, "🟡 Munición (GunStore)")
 local ammos = {
-    {"PistolAmmo","Pistol Ammo 🟡","GunStore"},
-    {"ShotgunAmmo","Shotgun Ammo 🟠","GunStore"},
-    {"RifleAmmo","Rifle Ammo 🔴","GunStore"},
-    {"SMGAmmo","SMG Ammo 🟤","GunStore"},
+    {"PistolAmmo",  "Pistol Ammo 🟡"},
+    {"ShotgunAmmo", "Shotgun Ammo 🟠"},
+    {"RifleAmmo",   "Rifle Ammo 🔴"},
+    {"SMGAmmo",     "SMG Ammo 🟤"},
+    {"SniperAmmo",  "Sniper Ammo 🔵"},
 }
-for _, a in ipairs(ammos) do shopBtn(pageShop, a[2], a[1], a[3]) end
+for _, a in ipairs(ammos) do shopBtn(pageShop, a[2], a[1], "GunStore") end
 
-sectionLabel(pageShop, "💊 Consumibles")
-local misc = {
-    {"Mentos","Mentos 🌿","Merchant"},
-    {"Medkit","Medkit 💊","Merchant"},
-    {"Stamina","Stamina 🧪","Merchant"},
-    {"C4","C4 💣","Merchant"},
-    {"Grenade","Granada 🧨","Merchant"},
+sectionLabel(pageShop, "💊 Consumibles (Merchant)")
+local merchant = {
+    {"Medkit",      "Medkit 💊"},
+    {"FirstAid",    "First Aid 💉"},
+    {"Stamina",     "Stamina 🧪"},
+    {"Energy",      "Energy Drink 🥤"},
+    {"Mentos",      "Mentos 🌿"},
+    {"Drugs",       "Drugs 💊"},
+    {"C4",          "C4 💣"},
+    {"Grenade",     "Granada 🧨"},
+    {"Flashbang",   "Flashbang 💡"},
+    {"Lockpick",    "Lockpick 🔑"},
 }
-for _, m in ipairs(misc) do shopBtn(pageShop, m[2], m[1], m[3]) end
+for _, m in ipairs(merchant) do shopBtn(pageShop, m[2], m[1], "Merchant") end
 
-sectionLabel(pageShop, "🦺 Equipamiento")
+sectionLabel(pageShop, "🦺 Equipamiento (GunStore)")
 local equip = {
-    {"Vest","Chaleco 🦺","GunStore"},
-    {"Backpack","Mochila 🎒","Merchant"},
-    {"Mask","Máscara 😷","Merchant"},
-    {"Balaclava","Pasamontañas 🕶️","Merchant"},
+    {"Vest",         "Chaleco 🦺"},
+    {"LightVest",    "Light Vest 🦺"},
+    {"HeavyVest",    "Heavy Vest 🛡️"},
+    {"Helmet",       "Casco ⛑️"},
+    {"Backpack",     "Mochila 🎒"},
 }
-for _, e in ipairs(equip) do shopBtn(pageShop, e[2], e[1], e[3]) end
+for _, e in ipairs(equip) do shopBtn(pageShop, e[2], e[1], "GunStore") end
+
+sectionLabel(pageShop, "👕 Accesorios (Clothing)")
+local clothes = {
+    {"Balaclava",       "Pasamontañas 🎭"},
+    {"Mask",            "Máscara 😷"},
+    {"GhostMask",       "Ghost Mask 👻"},
+    {"Cap",             "Cap 🧢"},
+    {"Beanie",          "Beanie 🧶"},
+    {"Chain",           "Cadena ⛓️"},
+    {"Glasses",         "Gafas 🕶️"},
+    {"Goggles",         "Goggles 🥽"},
+    {"Bag",             "Bag 🎒"},
+    {"SideBag",         "Side Bag 👜"},
+    {"GirlBag",         "Girl Bag 👛"},
+    {"Headphones",      "Headphones 🎧"},
+    {"Yankee",          "Yankee 🧢"},
+    {"BucketHat",       "Bucket Hat 🪣"},
+    {"DiamondGlasses",  "Diamond Glasses 💎"},
+}
+for _, c in ipairs(clothes) do shopBtn(pageShop, c[2], c[1], "Clothing") end
 
 -- FIN SHOP
 -- ══════════════════════════════════════════════════════════════
