@@ -1,9 +1,9 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v4.4                        ║
+    ║           NEXUS  —  NexusClient  v4.5                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v4.4:                                             ║
+    ║  NOVEDADES v4.5:                                             ║
     ║  · HOOK reescrito igual al script universal (hookmetamethod)  ║
     ║  · checkcaller() + ValidateArguments → cámara libre          ║
     ║  · Fallback getrawmetatable para exploits sin hookmetamethod  ║
@@ -244,7 +244,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "v4.4 — Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.5 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -888,7 +888,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v4.4\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.5\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -997,59 +997,7 @@ local function getTargetPart(char)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
--- VisibleCheck correcto para 3ra persona:
--- Usa Camera:GetPartsObscuringTarget igual que el script universal.
--- Si hay partes bloqueando la vista del root → no visible.
-local function isVisible(targetPlayer)
-    local targetChar  = targetPlayer.Character
-    local localChar   = player.Character
-    if not targetChar or not localChar then return false end
-
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return false end
-
-    -- Puntos a verificar: posición del root del enemigo
-    local castPoints = {targetRoot.Position}
-    -- Ignorar los propios personajes para el cast
-    local ignoreList = {localChar, targetChar}
-
-    local obscuring = camera:GetPartsObscuringTarget(castPoints, ignoreList)
-    return #obscuring == 0
-end
-
-local function getBestTarget()
-    local center  = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
-    local bestP   = nil
-    local bestD   = math.huge
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == player then continue end
-        -- WHITELIST: si está en la lista, skip
-        if isWhitelisted(p) then continue end
-
-        local char = p.Character
-        if not char then continue end
-        local hum  = char:FindFirstChildOfClass("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not hum or hum.Health <= 0 or not root then continue end
-
-        local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
-        if not onScreen then continue end
-
-        local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-        if dist2D > Config.FovRadius then continue end
-
-        if Config.VisibleCheck then
-                if not isVisible(p) then continue end
-            end
-
-        if dist2D < bestD then
-            bestD = dist2D
-            bestP = p
-        end
-    end
-    return bestP
-end
+-- [Target cache — ver sección más abajo, actualizado en RenderStepped]
 
 -- Hook metatables para silent aim
 -- ══════════════════════════════════════════════════════════════
@@ -1108,112 +1056,133 @@ player.CharacterAdded:Connect(watchChar)
 
 
 -- ══════════════════════════════════════════════════════════════
--- SILENT AIM HOOK
--- FIXES v4.4:
---   · Cámara: RaycastParams del juego NO tiene FilterDescendantsInstances
---     de paredes → solo interceptamos si params tiene FilterType Exclude
---     O si no hay params (FindPartOnRay legacy). checkcaller() evita loop.
---   · Manipulation = disparar A TRAVÉS de paredes: cuando está ON,
---     se pasan RaycastParams SIN filtros de paredes (FilterType = Exclude
---     con lista vacía) para que la bala ignore colisiones con el mapa.
---   · VisibleCheck = solo targeta jugadores visibles en pantalla (no
---     bloqueados por paredes). Usa Camera:GetPartsObscuringTarget.
+-- TARGET CACHE — se actualiza en RenderStepped, NUNCA dentro del hook
+-- El hook solo lee esta variable. Así evitamos cualquier llamado
+-- a métodos de Roblox dentro del hook que cause el loop/crash.
 -- ══════════════════════════════════════════════════════════════
+local cachedTargetPos = nil   -- Vector3 posición del hitpart, nil si no hay target
 
--- Estructura tipos esperados
-local ExpectedArgs = {
-    FindPartOnRayWithIgnoreList = { Required = 2,
-        Types = {"Instance","Ray"} },
-    FindPartOnRayWithWhitelist  = { Required = 2,
-        Types = {"Instance","Ray"} },
-    FindPartOnRay               = { Required = 2,
-        Types = {"Instance","Ray"} },
-    Raycast                     = { Required = 3,
-        Types = {"Instance","Vector3","Vector3"} },
-}
+local function updateTargetCache()
+    if not Config.SilentAimEnabled then
+        cachedTargetPos = nil
+        return
+    end
 
-local function validateArgs(args, schema)
-    local matches = 0
-    for i = 1, schema.Required do
-        if typeof(args[i]) == schema.Types[i] then
-            matches = matches + 1
+    local center = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
+    local bestDist = math.huge
+    local bestPos  = nil
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == player then continue end
+        if isWhitelisted(p) then continue end
+
+        local char = p.Character
+        if not char then continue end
+        local hum  = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not hum or hum.Health <= 0 or not root then continue end
+
+        local sp, onScreen = camera:WorldToViewportPoint(root.Position)
+        if not onScreen then continue end
+
+        local d2 = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+        if d2 > Config.FovRadius then continue end
+
+        if Config.VisibleCheck then
+            local localChar = player.Character
+            if localChar then
+                local ok, obs = pcall(function()
+                    return camera:GetPartsObscuringTarget({root.Position}, {localChar, char})
+                end)
+                if ok and #obs > 0 then continue end
+            end
+        end
+
+        if d2 < bestDist then
+            bestDist = d2
+            -- Elegir hitpart según config
+            local partName = Config.TargetPart
+            if partName == "Random" then
+                local r = math.random(100)
+                partName = r <= 30 and "Head" or (r <= 80 and "UpperTorso" or "LowerTorso")
+            end
+            local hitPart = char:FindFirstChild(partName) or root
+            bestPos = hitPart.Position
         end
     end
-    return matches >= schema.Required
+
+    cachedTargetPos = bestPos
 end
 
-local function getDirectionTo(origin, position)
-    return (position - origin).Unit * 1000
+-- ══════════════════════════════════════════════════════════════
+-- HOOK — MINIMALISTA, sin ninguna llamada a API de Roblox
+-- Solo usa cachedTargetPos (Vector3 simple) y math pura
+-- ══════════════════════════════════════════════════════════════
+local function dirTo(origin, target)
+    return (target - origin).Unit * 1000
 end
 
--- Manipulation: RaycastParams que ignora TODO el mapa (solo colisiona con chars)
-local function makeWallbreakParams()
-    local p = RaycastParams.new()
-    p.FilterType = Enum.RaycastFilterType.Include
-    -- incluir solo personajes de jugadores como colisionables
+-- RaycastParams para wallbreak — creado una sola vez fuera del hook
+local wallbreakParams = RaycastParams.new()
+wallbreakParams.FilterType = Enum.RaycastFilterType.Include
+wallbreakParams.FilterDescendantsInstances = {}  -- se actualiza en RenderStepped
+
+local function updateWallbreakParams()
     local chars = {}
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= player and pl.Character then
-            table.insert(chars, pl.Character)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            table.insert(chars, p.Character)
         end
     end
-    p.FilterDescendantsInstances = chars
-    return p
+    wallbreakParams.FilterDescendantsInstances = chars
 end
 
 local saHookOk, saHookErr = pcall(function()
     local oldNC
     oldNC = hookmetamethod(game, "__namecall", newcclosure(function(...)
-        local Method = getnamecallmethod()
-        local Args   = {...}  -- Args[1]=self, Args[2..]=argumentos reales
+        -- REGLA DE ORO: NO llamar ningún método de Roblox aquí dentro.
+        -- Solo leer variables Lua puras y hacer math.
+        local method = getnamecallmethod()
 
-        if not Config.SilentAimEnabled then return oldNC(...) end
-        if checkcaller()               then return oldNC(...) end
-        if Args[1] ~= Workspace        then return oldNC(...) end
+        if not Config.SilentAimEnabled     then return oldNC(...) end
+        if checkcaller()                   then return oldNC(...) end
+        if not cachedTargetPos             then return oldNC(...) end
         if math.random(100) > Config.HitChance then return oldNC(...) end
 
-        -- Validar que es un raycast de disparo por tipos
-        local isRay = (Method == "Raycast"
-            and validateArgs(Args, ExpectedArgs.Raycast))
-        local isLegacy = (Method == "FindPartOnRay"
-            or Method == "FindPartOnRayWithIgnoreList"
-            or Method == "FindPartOnRayWithWhitelist")
-            and typeof(Args[2]) == "Ray"
+        local args = {...}
+        -- args[1] = self (Workspace o cualquier Instance)
+        if args[1] ~= Workspace then return oldNC(...) end
 
-        if not isRay and not isLegacy then return oldNC(...) end
-
-        local target = getBestTarget()
-        if not target or not target.Character then return oldNC(...) end
-        local part = getTargetPart(target.Character)
-        if not part then return oldNC(...) end
-
-        if isRay then
-            -- Raycast(origin, dir, params?)
-            local origin = Args[2]
-            local newDir = getDirectionTo(origin, part.Position)
-            Args[3] = newDir
-            -- Manipulation = wallbreak: reemplazar params para ignorar paredes
+        if method == "Raycast" then
+            -- args: [1]=Workspace, [2]=Vector3 origin, [3]=Vector3 dir, [4]=RaycastParams?
+            if typeof(args[2]) ~= "Vector3" or typeof(args[3]) ~= "Vector3" then
+                return oldNC(...)
+            end
+            args[3] = dirTo(args[2], cachedTargetPos)
             if Config.Manipulation then
-                Args[4] = makeWallbreakParams()
+                args[4] = wallbreakParams
             end
-            return oldNC(table.unpack(Args))
-        else
-            -- FindPartOnRay legacy
-            local ray    = Args[2]
-            local origin = ray.Origin
-            local newDir = getDirectionTo(origin, part.Position)
-            Args[2] = Ray.new(origin, newDir)
-            -- Manipulation = ignorar lista de ignore (no pasar paredes como ignore)
-            if Config.Manipulation and Method == "FindPartOnRayWithIgnoreList" then
-                Args[3] = {}  -- lista vacía = no ignorar nada = bala pasa todo
+            return oldNC(table.unpack(args))
+
+        elseif method == "FindPartOnRayWithIgnoreList"
+            or method == "FindPartOnRay"
+            or method == "FindPartOnRayWithWhitelist" then
+            -- args: [1]=Workspace, [2]=Ray, [3]=table?, ...
+            if typeof(args[2]) ~= "Ray" then return oldNC(...) end
+            local origin = args[2].Origin
+            args[2] = Ray.new(origin, dirTo(origin, cachedTargetPos))
+            if Config.Manipulation and method == "FindPartOnRayWithIgnoreList" then
+                args[3] = {}  -- lista vacía = bala ignora paredes
             end
-            return oldNC(table.unpack(Args))
+            return oldNC(table.unpack(args))
         end
+
+        return oldNC(...)
     end))
 end)
 
 if not saHookOk then
-    warn("[NEXUS] hookmetamethod no disponible: "..tostring(saHookErr))
+    warn("[NEXUS] hookmetamethod no disponible, usando fallback: "..tostring(saHookErr))
     local mt = getrawmetatable and getrawmetatable(game)
     if mt then
         pcall(function()
@@ -1221,33 +1190,24 @@ if not saHookOk then
             local oldNC2 = mt.__namecall
             mt.__namecall = newcclosure(function(self, ...)
                 local method = getnamecallmethod()
-                if not Config.SilentAimEnabled then return oldNC2(self,...) end
-                if self ~= Workspace           then return oldNC2(self,...) end
+                if not Config.SilentAimEnabled  then return oldNC2(self,...) end
+                if not cachedTargetPos          then return oldNC2(self,...) end
+                if self ~= Workspace            then return oldNC2(self,...) end
                 if math.random(100) > Config.HitChance then return oldNC2(self,...) end
                 local args = {...}
-                if method == "Raycast" and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
-                    local target = getBestTarget()
-                    if target and target.Character then
-                        local part = getTargetPart(target.Character)
-                        if part then
-                            args[2] = getDirectionTo(args[1], part.Position)
-                            if Config.Manipulation then args[3] = makeWallbreakParams() end
-                            return oldNC2(self, table.unpack(args))
-                        end
-                    end
+                if method == "Raycast"
+                and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
+                    args[2] = dirTo(args[1], cachedTargetPos)
+                    if Config.Manipulation then args[3] = wallbreakParams end
+                    return oldNC2(self, table.unpack(args))
                 elseif (method=="FindPartOnRay" or method=="FindPartOnRayWithIgnoreList")
                 and typeof(args[1])=="Ray" then
-                    local target = getBestTarget()
-                    if target and target.Character then
-                        local part = getTargetPart(target.Character)
-                        if part then
-                            args[1] = Ray.new(args[1].Origin, getDirectionTo(args[1].Origin, part.Position))
-                            if Config.Manipulation and method=="FindPartOnRayWithIgnoreList" then
-                                args[2] = {}
-                            end
-                            return oldNC2(self, table.unpack(args))
-                        end
+                    local o = args[1].Origin
+                    args[1] = Ray.new(o, dirTo(o, cachedTargetPos))
+                    if Config.Manipulation and method=="FindPartOnRayWithIgnoreList" then
+                        args[2] = {}
                     end
+                    return oldNC2(self, table.unpack(args))
                 end
                 return oldNC2(self,...)
             end)
@@ -1278,6 +1238,11 @@ end
 -- RENDER STEP — ESP + FOV + Snapline con colores dinámicos
 -- ══════════════════════════════════════════════════════════════
 RunService.RenderStepped:Connect(function()
+    -- Actualizar target y wallbreak ANTES que todo lo demás
+    -- El hook solo lee cachedTargetPos, nunca llama nada de Roblox
+    updateTargetCache()
+    updateWallbreakParams()
+
     local vpSize   = camera.ViewportSize
     local center2D = Vector2.new(vpSize.X/2, vpSize.Y/2)
     local myChar   = player.Character
@@ -1676,4 +1641,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v4.4] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.5] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
