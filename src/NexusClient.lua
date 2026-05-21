@@ -88,15 +88,15 @@ local TWEENSL = TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- ── PANEL — adaptativo móvil / PC ───────────────────────────
-local panelW = isMobile and math.min(math.floor(camera.ViewportSize.X * 0.88), 360) or 314
-local panelH = isMobile and math.min(math.floor(camera.ViewportSize.Y * 0.82), 560) or 480
+local vp = camera.ViewportSize
+local panelW = isMobile and 300 or 314
+local panelH = isMobile and math.min(math.floor(vp.Y * 0.60), 420) or 480
 
 local main=Instance.new("Frame")
 main.Name="SyyPanel"
 main.Size=UDim2.fromOffset(panelW,panelH)
--- centrado en pantalla en móvil, lateral en PC
 if isMobile then
-    main.Position=UDim2.new(0.5,-panelW/2,0.5,-panelH/2)
+    main.Position=UDim2.new(0.5,-panelW/2,0,math.floor(vp.Y*0.08))
 else
     main.Position=UDim2.new(0,28,0.5,-panelH/2)
 end
@@ -128,13 +128,31 @@ local headerLine=Instance.new("Frame")
 headerLine.Size=UDim2.new(1,0,0,1); headerLine.Position=UDim2.new(0,0,1,-1)
 headerLine.BackgroundColor3=C_ACCENT; headerLine.BorderSizePixel=0; headerLine.Parent=header
 
--- logo image
-local logoSize = isMobile and 42 or 34
+-- logo image — con fallback a texto si el asset no está subido
+local logoSize = isMobile and 38 or 34
 local logoImg=Instance.new("ImageLabel")
 logoImg.Size=UDim2.fromOffset(logoSize,logoSize)
 logoImg.Position=UDim2.new(0,6,0.5,-(logoSize/2))
-logoImg.BackgroundTransparency=1; logoImg.Image="rbxassetid://1779405825649"
-logoImg.ScaleType=Enum.ScaleType.Fit; logoImg.Parent=header
+logoImg.BackgroundTransparency=1
+logoImg.Image="rbxassetid://1779405825649"
+logoImg.ScaleType=Enum.ScaleType.Fit
+logoImg.ImageTransparency=0
+logoImg.Parent=header
+-- fallback: si la imagen no carga en 2s, muestra "⬡"
+task.delay(2, function()
+    if logoImg and logoImg.IsLoaded == false then
+        logoImg.Image=""
+        local fallLbl=Instance.new("TextLabel")
+        fallLbl.Size=UDim2.fromOffset(logoSize,logoSize)
+        fallLbl.Position=logoImg.Position
+        fallLbl.BackgroundTransparency=1
+        fallLbl.Text="⬡"; fallLbl.TextColor3=C_ACCENT
+        fallLbl.Font=Enum.Font.GothamBlack
+        fallLbl.TextSize=logoSize-4
+        fallLbl.TextXAlignment=Enum.TextXAlignment.Center
+        fallLbl.Parent=header
+    end
+end)
 
 local titleLbl=Instance.new("TextLabel")
 titleLbl.Size=UDim2.new(1,-110,0,isMobile and 26 or 24)
@@ -496,44 +514,78 @@ makeSlider(pageExt,"Velocidad Fly","FlySpeed",10,200)
 
 -- ── INF STAMINA ──────────────────────────────────────────────
 secLabel(pageExt,"Stamina")
-makeToggle(pageExt,"♾ Inf Stamina","InfStamina",function(on)
-    if not on then return end
-end)
 
--- loop infinito de stamina
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if Config.InfStamina then
-            local char=player.Character
-            if char then
-                -- compatibilidad genérica: busca valores típicos de stamina
-                for _,v in ipairs(char:GetDescendants()) do
-                    if (v:IsA("NumberValue") or v:IsA("IntValue")) then
-                        local nm=v.Name:lower()
-                        if nm:find("stamina") or nm:find("energia") or nm:find("energy") or nm:find("sprint") then
-                            if v.Value < (v:FindFirstChild("MaxValue") and v.MaxValue or 100) then
-                                pcall(function() v.Value=100 end)
-                            end
-                        end
-                    end
-                end
-                -- Humanoid.WalkSpeed no se toca; pero nos aseguramos de no limitar salto
-                local hum=char:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    pcall(function()
-                        -- algunos juegos usan JumpPower o atributos custom
-                        if hum:GetAttribute("Stamina") ~= nil then
-                            hum:SetAttribute("Stamina", hum:GetAttribute("MaxStamina") or hum:GetAttribute("Stamina") or 100)
-                        end
-                        if hum:GetAttribute("Energy") ~= nil then
-                            hum:SetAttribute("Energy", hum:GetAttribute("MaxEnergy") or 100)
-                        end
-                    end)
-                end
+-- conexiones activas de stamina (para limpiarlas al desactivar)
+local staminaConns = {}
+
+local function disconnectStamina()
+    for _, c in ipairs(staminaConns) do pcall(function() c:Disconnect() end) end
+    staminaConns = {}
+end
+
+local function hookStamina(char)
+    if not char then return end
+    -- ── PlaceId 455366377 (el juego de la foto) ── método exacto y directo
+    if game.PlaceId == 455366377 then
+        local stVal = char:WaitForChild("Stamina", 4)
+        if stVal then
+            stVal.Value = 100
+            local c = stVal.Changed:Connect(function()
+                stVal.Value = 100
+            end)
+            table.insert(staminaConns, c)
+        end
+        return  -- no necesita los métodos genéricos en este juego
+    end
+
+    -- ── Fallback genérico para cualquier otro juego ──────────
+    -- busca cualquier Value con nombre de stamina/sprint/energy en el char
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("NumberValue") or v:IsA("IntValue") or v:IsA("DoubleConstrainedValue") then
+            local nm = v.Name:lower()
+            if nm:find("stamina") or nm:find("sprint") or nm:find("energy")
+            or nm:find("endur") or nm:find("breath") or nm:find("fuel") then
+                local maxV = v:IsA("DoubleConstrainedValue") and v.MaxValue or 100
+                pcall(function() v.Value = maxV end)
+                local c = v.Changed:Connect(function()
+                    pcall(function() v.Value = maxV end)
+                end)
+                table.insert(staminaConns, c)
             end
         end
     end
+    -- atributos del Humanoid
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        for _, attr in ipairs({"Stamina","Sprint","Energy","Endurance","Breath","Fuel"}) do
+            pcall(function()
+                if hum:GetAttribute(attr) ~= nil then
+                    local mx = hum:GetAttribute("Max"..attr) or hum:GetAttribute(attr.."Max") or 100
+                    local c = hum:GetAttributeChangedSignal(attr):Connect(function()
+                        hum:SetAttribute(attr, mx)
+                    end)
+                    table.insert(staminaConns, c)
+                    hum:SetAttribute(attr, mx)
+                end
+            end)
+        end
+    end
+end
+
+makeToggle(pageExt,"♾ Inf Stamina","InfStamina",function(on)
+    if on then
+        hookStamina(player.Character)
+    else
+        disconnectStamina()
+    end
+end)
+
+-- re-hookear al respawnear
+player.CharacterAdded:Connect(function(char)
+    if not Config.InfStamina then return end
+    disconnectStamina()
+    task.wait(0.5)  -- esperar que cargue el personaje
+    hookStamina(char)
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -663,18 +715,28 @@ end
 -- FAB  (botón flotante con logo)
 -- ══════════════════════════════════════════════════════════════
 local fabSz = isMobile and 62 or 48
--- En móvil lo ponemos abajo-derecha para no tapar el juego
 local fab=Instance.new("ImageButton")
 fab.Name="SyyFAB"; fab.Size=UDim2.fromOffset(fabSz,fabSz)
 fab.Position= isMobile
-    and UDim2.new(1,-(fabSz+14),1,-(fabSz+40))   -- abajo-derecha en móvil
-    or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))  -- centro-derecha en PC
+    and UDim2.new(1,-(fabSz+14),1,-(fabSz+40))
+    or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))
 fab.BackgroundColor3=C_DARK; fab.BorderSizePixel=0
 fab.AutoButtonColor=false
 fab.Image="rbxassetid://1779405825649"
 fab.ScaleType=Enum.ScaleType.Fit
 fab.ZIndex=20; fab.Parent=gui
 stroke(fab,C_ACCENT,2)
+-- fallback texto si no carga imagen
+task.delay(2, function()
+    if fab and fab.IsLoaded == false then
+        fab.Image=""
+        local ftxt=Instance.new("TextLabel")
+        ftxt.Size=UDim2.new(1,0,1,0); ftxt.BackgroundTransparency=1
+        ftxt.Text="SYY"; ftxt.TextColor3=C_ACCENT
+        ftxt.Font=Enum.Font.GothamBlack; ftxt.TextSize=isMobile and 14 or 11
+        ftxt.ZIndex=21; ftxt.Parent=fab
+    end
+end)
 
 -- pulse animation on FAB
 task.spawn(function()
