@@ -41,12 +41,20 @@ changed.Event:Connect(function(settings)
 end)
 ```
 
-## Raw
-
-Cuando el repositorio este publicado, el raw tendra este formato:
+## Repositorio
 
 ```text
-https://raw.githubusercontent.com/TU_USUARIO/Nexus/main/src/NexusClient.lua
+https://github.com/itzstxx/Nexus
 ```
+
+## Raw
+
+El archivo directo esta en:
+
+```text
+https://raw.githubusercontent.com/itzstxx/Nexus/main/src/NexusClient.lua
+```
+
+Nota: si el repositorio esta privado, el raw solo funcionara con una sesion autorizada de GitHub. Para usarlo sin login, cambia el repositorio a publico o instala el `LocalScript` directamente en Roblox Studio.
 
 No se incluye un `loadstring` de executor. Esta version esta pensada para Roblox Studio y para juegos propios.
