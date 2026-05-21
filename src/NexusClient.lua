@@ -1,9 +1,9 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v4.5                        ║
+    ║           NEXUS  —  NexusClient  v4.6                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v4.5:                                             ║
+    ║  NOVEDADES v4.6:                                             ║
     ║  · HOOK reescrito igual al script universal (hookmetamethod)  ║
     ║  · checkcaller() + ValidateArguments → cámara libre          ║
     ║  · Fallback getrawmetatable para exploits sin hookmetamethod  ║
@@ -57,8 +57,15 @@ local DefaultConfig = {
     SkelColorR=0,  SkelColorG=220, SkelColorB=255,
     NameColorR=255,NameColorG=255, NameColorB=255,
     -- Settings
-    RoundToggles      = false,  -- apaga aimbot y esp al terminar ronda
+    RoundToggles      = false,
     AutoLoadTheme     = false,
+    PanelScale        = 100,   -- % escala del panel (50-150)
+    -- Extras
+    FlyEnabled        = false,
+    FlySpeed          = 50,
+    RageMode          = false,
+    ItemInHand        = true,   -- mostrar qué tiene en la mano
+    InstaInteract     = false,  -- auto trigger ProximityPrompt al tocar
     -- Lista Blanca (array de nombres de usuario)
     Whitelist         = {},
 }
@@ -189,8 +196,8 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- PANEL PRINCIPAL
 -- ══════════════════════════════════════════════════════════════
-local MIN_W, MIN_H = 320, 400
-local panelW, panelH = 380, 520
+local MIN_W, MIN_H = 280, 360
+local panelW, panelH = 320, 480
 
 local main = Instance.new("Frame")
 main.Name                    = "NexusPanel"
@@ -244,7 +251,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "v4.5 — Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.6 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -300,7 +307,7 @@ tabBar.Parent           = main
 corner(tabBar, 5)
 stroke(tabBar, Color3.fromRGB(0,160,255), 1, 0.4)
 
-local tabNames  = {"Aimbot", "Visuals", "Settings"}
+local tabNames  = {"Aimbot", "Visuals", "Extras", "Shop", "Settings"}
 local tabBtns   = {}
 local tabPages  = {}
 local activeTab = 1
@@ -717,11 +724,15 @@ makeSliderRow(pageVis,"Dist Máx",    "EspMaxDist", 50, 1000)
 -- ══════════════════════════════════════════════════════════════
 -- TAB 3: SETTINGS
 -- ══════════════════════════════════════════════════════════════
-local pageSet = tabPages[3]
+local pageSet = tabPages[5]
 
 sectionLabel(pageSet, "General")
-makeToggle(pageSet, "Round Toggles",   "RoundToggles")   -- apaga aim/esp al fin de ronda
+makeToggle(pageSet, "Round Toggles",   "RoundToggles")
 makeToggle(pageSet, "Auto Load Theme", "AutoLoadTheme")
+makeSliderRow(pageSet, "Tamaño Panel %", "PanelScale", 50, 150, function(v)
+    local s = v / 100
+    main.Size = UDim2.fromOffset(math.floor(panelW * s), math.floor(panelH * s))
+end)
 
 -- ── LISTA BLANCA ──────────────────────────────────────────────
 sectionLabel(pageSet, "Lista Blanca (Whitelist)")
@@ -888,7 +899,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v4.5\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.6\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -898,8 +909,440 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- FOV CIRCLE + SNAPLINE (Drawing)
+-- TAB 3: EXTRAS
 -- ══════════════════════════════════════════════════════════════
+local pageExt = tabPages[3]
+
+-- ── RAGE MODE ────────────────────────────────────────────────
+sectionLabel(pageExt, "Rage Mode")
+do
+    local rageRow, rageRefresh = makeToggle(pageExt, "🔴 Rage Mode", "RageMode", function(on)
+        if on then
+            -- Máximo abuse: fov enorme, hit 100%, sin visible check, manipulation on
+            Config.SilentAimEnabled = true
+            Config.HitChance        = 100
+            Config.FovRadius        = 999
+            Config.VisibleCheck     = false
+            Config.Manipulation     = true
+            Config.TargetPart       = "Head"
+            saveConfig()
+        end
+    end)
+end
+
+-- ── FLY ──────────────────────────────────────────────────────
+sectionLabel(pageExt, "Fly")
+makeToggle(pageExt, "Fly Enabled", "FlyEnabled", function(on)
+    local char = player.Character
+    if not char then return end
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return end
+    if on then
+        hum.PlatformStand = true
+        local bp = Instance.new("BodyPosition")
+        bp.Name     = "NexusFlyBP"
+        bp.MaxForce = Vector3.new(1e5,1e5,1e5)
+        bp.Position = root.Position
+        bp.Parent   = root
+        local bg = Instance.new("BodyGyro")
+        bg.Name     = "NexusFlyBG"
+        bg.MaxTorque= Vector3.new(1e5,1e5,1e5)
+        bg.CFrame   = root.CFrame
+        bg.Parent   = root
+    else
+        hum.PlatformStand = false
+        local bp = root:FindFirstChild("NexusFlyBP")
+        local bg = root:FindFirstChild("NexusFlyBG")
+        if bp then bp:Destroy() end
+        if bg then bg:Destroy() end
+    end
+end)
+makeSliderRow(pageExt, "Velocidad Fly", "FlySpeed", 10, 200)
+
+-- ── ITEM EN LA MANO ──────────────────────────────────────────
+sectionLabel(pageExt, "Item en la Mano")
+makeToggle(pageExt, "Ver Item en Mano", "ItemInHand")
+
+-- ── INSTA INTERACT ───────────────────────────────────────────
+sectionLabel(pageExt, "Insta Interact")
+makeToggle(pageExt, "Insta Interact", "InstaInteract")
+do
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.Size              = UDim2.new(1,0,0,28)
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.Text              = "Toca / click → activa ProximityPrompt más cercano"
+    infoLbl.TextColor3        = Color3.fromRGB(100,180,220)
+    infoLbl.Font              = Enum.Font.GothamMedium
+    infoLbl.TextSize          = 10
+    infoLbl.TextWrapped       = true
+    infoLbl.TextXAlignment    = Enum.TextXAlignment.Left
+    infoLbl.Parent            = pageExt
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- TAB 4: SHOP — Street Life Remastered
+-- Detecta el RemoteEvent de compra en runtime.
+-- Si el jugador abre la tienda una vez, el hook lo captura.
+-- Items agrupados por categoría con nombres del juego.
+-- ══════════════════════════════════════════════════════════════
+local pageShop = tabPages[4]
+local RS = game:GetService("ReplicatedStorage")
+local shopRemote = nil
+local detectedRemoteName = "?"
+
+local KNOWN_REMOTE_PATHS = {
+    {"Remotes","BuyItem"},       {"Remotes","PurchaseItem"},
+    {"Remotes","BuyGun"},        {"Remotes","Shop"},
+    {"Remotes","Purchase"},      {"Events","BuyItem"},
+    {"Events","Shop"},           {"Events","Purchase"},
+    {"RemoteEvents","BuyItem"},  {"RemoteEvents","Shop"},
+    {"RemoteEvents","PurchaseWeapon"}, {"RemoteEvents","BuyWeapon"},
+    {"BuyItem"}, {"Shop"}, {"Purchase"},
+}
+
+local function findShopRemote()
+    for _, path in ipairs(KNOWN_REMOTE_PATHS) do
+        local cur = RS
+        for _, part in ipairs(path) do
+            cur = cur:FindFirstChild(part)
+            if not cur then break end
+        end
+        if cur and cur:IsA("RemoteEvent") then
+            shopRemote = cur
+            detectedRemoteName = table.concat(path, "/")
+            return true
+        end
+    end
+    for _, v in ipairs(RS:GetDescendants()) do
+        if v:IsA("RemoteEvent") then
+            local n = v.Name:lower()
+            if n:find("buy") or n:find("shop") or n:find("purchase") then
+                shopRemote = v
+                detectedRemoteName = v:GetFullName()
+                return true
+            end
+        end
+    end
+    return false
+end
+
+task.spawn(function() task.wait(2); findShopRemote() end)
+RS.DescendantAdded:Connect(function() if not shopRemote then findShopRemote() end end)
+
+-- Hook para capturar el remote cuando el usuario abre la tienda manualmente
+pcall(function()
+    local oldNC_shop
+    oldNC_shop = hookmetamethod(game, "__namecall", newcclosure(function(...)
+        local method = getnamecallmethod()
+        local args   = {...}
+        if method == "FireServer" and args[1] and args[1]:IsA("RemoteEvent")
+        and not checkcaller() then
+            local n = args[1].Name:lower()
+            if n:find("buy") or n:find("shop") or n:find("purchase") or n:find("item") then
+                if shopRemote ~= args[1] then
+                    shopRemote = args[1]
+                    detectedRemoteName = args[1]:GetFullName()
+                    print("[NEXUS Shop] Remote capturado: "..detectedRemoteName)
+                end
+            end
+        end
+        return oldNC_shop(...)
+    end))
+end)
+
+local function buyItem(itemName, storeArg, qty)
+    qty = qty or 1
+    if not shopRemote then findShopRemote() end
+    if not shopRemote then return false end
+    pcall(function()
+        if storeArg then
+            shopRemote:FireServer(itemName, storeArg, qty)
+        else
+            shopRemote:FireServer(itemName, qty)
+        end
+    end)
+    -- fallback solo nombre
+    pcall(function() shopRemote:FireServer(itemName) end)
+    return true
+end
+
+-- Status label
+sectionLabel(pageShop, "Estado Remote")
+local remoteStatusLbl = Instance.new("TextLabel")
+remoteStatusLbl.Size              = UDim2.new(1,0,0,26)
+remoteStatusLbl.BackgroundColor3  = Color3.fromRGB(3,20,10)
+remoteStatusLbl.BackgroundTransparency = 0.3
+remoteStatusLbl.BorderSizePixel   = 0
+remoteStatusLbl.Text              = "🔍 Buscando..."
+remoteStatusLbl.TextColor3        = Color3.fromRGB(255,220,80)
+remoteStatusLbl.Font              = Enum.Font.GothamMedium
+remoteStatusLbl.TextSize          = 10
+remoteStatusLbl.TextWrapped       = true
+remoteStatusLbl.Parent            = pageShop
+corner(remoteStatusLbl, 4)
+task.spawn(function()
+    while true do task.wait(1)
+        if shopRemote then
+            remoteStatusLbl.Text       = "✅ "..detectedRemoteName
+            remoteStatusLbl.TextColor3 = Color3.fromRGB(80,255,160)
+        else
+            remoteStatusLbl.Text       = "❌ Abre la tienda una vez primero"
+            remoteStatusLbl.TextColor3 = Color3.fromRGB(255,100,100)
+        end
+    end
+end)
+
+local function shopBtn(page, lbl, itemName, storeArg, qty)
+    local btn = Instance.new("TextButton")
+    btn.Size              = UDim2.new(1,0,0,28)
+    btn.BackgroundColor3  = Color3.fromRGB(5,30,15)
+    btn.BorderSizePixel   = 0
+    btn.Text              = lbl
+    btn.TextColor3        = Color3.fromRGB(100,255,160)
+    btn.Font              = Enum.Font.GothamBold
+    btn.TextSize          = 11
+    btn.AutoButtonColor   = false
+    btn.Parent            = page
+    corner(btn, 4)
+    stroke(btn, Color3.fromRGB(0,180,80), 1, 0.4)
+    btn.MouseButton1Click:Connect(function()
+        local ok = buyItem(itemName, storeArg, qty)
+        btn.Text = ok and ("✅ "..lbl) or "❌ Remote no listo — abre tienda"
+        task.delay(1.5, function() btn.Text = lbl end)
+    end)
+end
+
+sectionLabel(pageShop, "🔫 Armas")
+local guns = {
+    {"Pistol","Pistola 🔫","GunStore"},{"Deagle","Deagle 🔫","GunStore"},
+    {"Revolver","Revolver 🔫","GunStore"},{"Shotgun","Shotgun 💥","GunStore"},
+    {"AK47","AK-47 🔥","GunStore"},{"AR15","AR-15 🔥","GunStore"},
+    {"M4","M4 🔥","GunStore"},{"MP5","MP5 🔥","GunStore"},
+    {"Uzi","Uzi 🔥","GunStore"},{"Knife","Cuchillo 🗡️","GunStore"},
+    {"Bat","Bat 🪓","GunStore"},
+}
+for _, g in ipairs(guns) do shopBtn(pageShop, g[2], g[1], g[3]) end
+
+sectionLabel(pageShop, "🟡 Munición")
+local ammos = {
+    {"PistolAmmo","Pistol Ammo 🟡","GunStore"},
+    {"ShotgunAmmo","Shotgun Ammo 🟠","GunStore"},
+    {"RifleAmmo","Rifle Ammo 🔴","GunStore"},
+    {"SMGAmmo","SMG Ammo 🟤","GunStore"},
+}
+for _, a in ipairs(ammos) do shopBtn(pageShop, a[2], a[1], a[3]) end
+
+sectionLabel(pageShop, "💊 Consumibles")
+local misc = {
+    {"Mentos","Mentos 🌿","Merchant"},
+    {"Medkit","Medkit 💊","Merchant"},
+    {"Stamina","Stamina 🧪","Merchant"},
+    {"C4","C4 💣","Merchant"},
+    {"Grenade","Granada 🧨","Merchant"},
+}
+for _, m in ipairs(misc) do shopBtn(pageShop, m[2], m[1], m[3]) end
+
+sectionLabel(pageShop, "🦺 Equipamiento")
+local equip = {
+    {"Vest","Chaleco 🦺","GunStore"},
+    {"Backpack","Mochila 🎒","Merchant"},
+    {"Mask","Máscara 😷","Merchant"},
+    {"Balaclava","Pasamontañas 🕶️","Merchant"},
+}
+for _, e in ipairs(equip) do shopBtn(pageShop, e[2], e[1], e[3]) end
+
+-- FIN SHOP
+-- ══════════════════════════════════════════════════════════════
+-- FLY LÓGICA — RenderStepped mueve el personaje
+-- ══════════════════════════════════════════════════════════════
+local flyActive = false  -- estado actual del fly en el personaje
+
+local function stopFly()
+    flyActive = false
+    local char = player.Character
+    if not char then return end
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if hum  then hum.PlatformStand = false end
+    if root then
+        local bp = root:FindFirstChild("NexusFlyBP")
+        local bg = root:FindFirstChild("NexusFlyBG")
+        if bp then bp:Destroy() end
+        if bg then bg:Destroy() end
+    end
+end
+
+local function startFly()
+    flyActive = true
+    local char = player.Character
+    if not char then return end
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return end
+    hum.PlatformStand = true
+    if not root:FindFirstChild("NexusFlyBP") then
+        local bp = Instance.new("BodyPosition")
+        bp.Name     = "NexusFlyBP"
+        bp.MaxForce = Vector3.new(1e5,1e5,1e5)
+        bp.Position = root.Position
+        bp.D        = 500
+        bp.P        = 10000
+        bp.Parent   = root
+    end
+    if not root:FindFirstChild("NexusFlyBG") then
+        local bg = Instance.new("BodyGyro")
+        bg.Name      = "NexusFlyBG"
+        bg.MaxTorque = Vector3.new(1e5,1e5,1e5)
+        bg.D         = 100
+        bg.P         = 10000
+        bg.CFrame    = root.CFrame
+        bg.Parent    = root
+    end
+end
+
+-- Re-aplicar fly si el personaje respawnea
+player.CharacterAdded:Connect(function()
+    flyActive = false
+    task.wait(0.5)
+    if Config.FlyEnabled then startFly() end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if Config.FlyEnabled ~= flyActive then
+        if Config.FlyEnabled then startFly() else stopFly() end
+    end
+
+    if Config.FlyEnabled and flyActive then
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local bp   = root and root:FindFirstChild("NexusFlyBP")
+        local bg   = root and root:FindFirstChild("NexusFlyBG")
+        if not bp or not bg then return end
+
+        local speed = Config.FlySpeed
+        local camCF = camera.CFrame
+        local moveVec = Vector3.new(0,0,0)
+
+        -- WASD / flechas PC
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveVec = moveVec + camCF.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveVec = moveVec - camCF.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveVec = moveVec - camCF.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveVec = moveVec + camCF.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space)
+        or UserInputService:IsKeyDown(Enum.KeyCode.Q) then
+            moveVec = moveVec + Vector3.new(0,1,0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+        or UserInputService:IsKeyDown(Enum.KeyCode.E) then
+            moveVec = moveVec - Vector3.new(0,1,0)
+        end
+
+        if moveVec.Magnitude > 0 then
+            bp.Position = bp.Position + moveVec.Unit * speed * 0.016
+        end
+        bg.CFrame = CFrame.new(root.Position, root.Position + camCF.LookVector)
+    end
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- INSTA INTERACT — detecta click/tap y activa ProximityPrompt más cercano
+-- ══════════════════════════════════════════════════════════════
+local function triggerNearestPrompt()
+    if not Config.InstaInteract then return end
+    local myChar = player.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    local best, bestDist = nil, math.huge
+    -- Buscar todos los ProximityPrompts en el workspace
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("ProximityPrompt") and v.Enabled then
+            local pp = v.Parent
+            local pos = (pp and pp:IsA("BasePart")) and pp.Position
+                     or (pp and pp:FindFirstChild("PrimaryPart")) and pp.PrimaryPart.Position
+            if pos then
+                local d = (pos - myRoot.Position).Magnitude
+                if d < v.MaxActivationDistance and d < bestDist then
+                    bestDist = d
+                    best     = v
+                end
+            end
+        end
+    end
+    if best then
+        -- Trigger via fire
+        pcall(function()
+            fireclickdetector(best)
+        end)
+        pcall(function()
+            best:InputHoldBegin()
+            task.delay(0.1, function()
+                pcall(function() best:InputHoldEnd() end)
+            end)
+        end)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(inp, processed)
+    if processed then return end
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        triggerNearestPrompt()
+    end
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- ITEM EN LA MANO — Drawing texts sobre cada jugador
+-- ══════════════════════════════════════════════════════════════
+local itemDrawings = {}  -- {player -> Drawing.Text}
+
+local function getItemInHand(char)
+    if not char then return nil end
+    -- Buscar Tool equipada en el personaje
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Tool") then
+            return v.Name
+        end
+    end
+    return nil
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= player then
+        local t = Drawing.new("Text")
+        t.Size    = 12
+        t.Color   = Color3.fromRGB(255, 220, 80)
+        t.Outline = true
+        t.Visible = false
+        itemDrawings[p] = t
+    end
+end
+Players.PlayerAdded:Connect(function(p)
+    if p == player then return end
+    local t = Drawing.new("Text")
+    t.Size    = 12
+    t.Color   = Color3.fromRGB(255, 220, 80)
+    t.Outline = true
+    t.Visible = false
+    itemDrawings[p] = t
+end)
+Players.PlayerRemoving:Connect(function(p)
+    if itemDrawings[p] then
+        itemDrawings[p]:Remove()
+        itemDrawings[p] = nil
+    end
+end)
+
+
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible   = false
 fovCircle.Thickness = 1.5
@@ -1366,6 +1809,19 @@ RunService.RenderStepped:Connect(function()
             end
         end
 
+        -- Item en la mano
+        local itemDraw = itemDrawings[p]
+        if itemDraw then
+            local itemName = Config.ItemInHand and getItemInHand(char) or nil
+            if itemName and Config.EspEnabled then
+                itemDraw.Text     = "🔫 "..itemName
+                itemDraw.Position = Vector2.new(sp.X, topSP.Y - 30)
+                itemDraw.Visible  = true
+            else
+                itemDraw.Visible = false
+            end
+        end
+
         -- Snapline al target
         if snapTarget == p then
             snapLineDraw.Visible = true
@@ -1641,4 +2097,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v4.5] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.6] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
