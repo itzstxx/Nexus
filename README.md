@@ -19,6 +19,26 @@ StarterPlayer
 +-- StarterPlayerScripts
 ```
 
+## Loader
+
+Si quieres usar un archivo pequeno que cargue el panel:
+
+1. Inserta `src/NexusLoader.lua` como `LocalScript` en:
+
+```text
+StarterPlayer
++-- StarterPlayerScripts
+```
+
+2. Inserta `src/NexusClient.lua` como `LocalScript` llamado `NexusClient` en:
+
+```text
+ReplicatedStorage
++-- NexusClient
+```
+
+El loader clona `NexusClient` dentro de `PlayerScripts` y Roblox lo ejecuta desde ahi.
+
 ## Controles
 
 - Click corto en el boton flotante: abre/cierra el panel.
@@ -53,6 +73,12 @@ El archivo directo esta en:
 
 ```text
 https://raw.githubusercontent.com/itzstxx/Nexus/main/src/NexusClient.lua
+```
+
+Raw del loader:
+
+```text
+https://raw.githubusercontent.com/itzstxx/Nexus/main/src/NexusLoader.lua
 ```
 
 Nota: si el repositorio esta privado, el raw solo funcionara con una sesion autorizada de GitHub. Para usarlo sin login, cambia el repositorio a publico o instala el `LocalScript` directamente en Roblox Studio.
