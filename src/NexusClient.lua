@@ -1,9 +1,9 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v4.3                        ║
+    ║           NEXUS  —  NexusClient  v4.4                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v4.3:                                             ║
+    ║  NOVEDADES v4.4:                                             ║
     ║  · HOOK reescrito igual al script universal (hookmetamethod)  ║
     ║  · checkcaller() + ValidateArguments → cámara libre          ║
     ║  · Fallback getrawmetatable para exploits sin hookmetamethod  ║
@@ -189,8 +189,8 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- PANEL PRINCIPAL
 -- ══════════════════════════════════════════════════════════════
-local MIN_W, MIN_H = 480, 600
-local panelW, panelH = 600, 800
+local MIN_W, MIN_H = 320, 400
+local panelW, panelH = 380, 520
 
 local main = Instance.new("Frame")
 main.Name                    = "NexusPanel"
@@ -244,7 +244,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "v4.3 — Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.4 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -888,7 +888,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v4.3\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.4\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -997,15 +997,24 @@ local function getTargetPart(char)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
-local function isVisible(part)
-    local origin = camera.CFrame.Position
-    local dir    = (part.Position - origin)
-    local params = RaycastParams.new()
-    params.FilterDescendantsInstances = {player.Character}
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local result = Workspace:Raycast(origin, dir, params)
-    if not result then return true end
-    return result.Instance:IsDescendantOf(part.Parent)
+-- VisibleCheck correcto para 3ra persona:
+-- Usa Camera:GetPartsObscuringTarget igual que el script universal.
+-- Si hay partes bloqueando la vista del root → no visible.
+local function isVisible(targetPlayer)
+    local targetChar  = targetPlayer.Character
+    local localChar   = player.Character
+    if not targetChar or not localChar then return false end
+
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return false end
+
+    -- Puntos a verificar: posición del root del enemigo
+    local castPoints = {targetRoot.Position}
+    -- Ignorar los propios personajes para el cast
+    local ignoreList = {localChar, targetChar}
+
+    local obscuring = camera:GetPartsObscuringTarget(castPoints, ignoreList)
+    return #obscuring == 0
 end
 
 local function getBestTarget()
@@ -1031,9 +1040,8 @@ local function getBestTarget()
         if dist2D > Config.FovRadius then continue end
 
         if Config.VisibleCheck then
-            local ok, vis = pcall(isVisible, root)
-            if ok and not vis then continue end
-        end
+                if not isVisible(p) then continue end
+            end
 
         if dist2D < bestD then
             bestD = dist2D
@@ -1100,33 +1108,34 @@ player.CharacterAdded:Connect(watchChar)
 
 
 -- ══════════════════════════════════════════════════════════════
--- SILENT AIM HOOK  (mismo patrón del script universal que funciona)
--- Diferencias clave vs versión anterior:
---   · hookmetamethod en vez de getrawmetatable+setreadonly
---   · checkcaller() para no interceptar nuestros propios calls
---   · ValidateArguments verifica tipos antes de redirigir
---     → esto evita interceptar raycasts de cámara/movimiento
---   · Args indexados correctamente: en __namecall con (...)
---     Arguments[1]=self, [2]=origin/ray, [3]=dir/params
+-- SILENT AIM HOOK
+-- FIXES v4.4:
+--   · Cámara: RaycastParams del juego NO tiene FilterDescendantsInstances
+--     de paredes → solo interceptamos si params tiene FilterType Exclude
+--     O si no hay params (FindPartOnRay legacy). checkcaller() evita loop.
+--   · Manipulation = disparar A TRAVÉS de paredes: cuando está ON,
+--     se pasan RaycastParams SIN filtros de paredes (FilterType = Exclude
+--     con lista vacía) para que la bala ignore colisiones con el mapa.
+--   · VisibleCheck = solo targeta jugadores visibles en pantalla (no
+--     bloqueados por paredes). Usa Camera:GetPartsObscuringTarget.
 -- ══════════════════════════════════════════════════════════════
 
--- Estructura de argumentos esperados por método (igual que el script universal)
+-- Estructura tipos esperados
 local ExpectedArgs = {
-    FindPartOnRayWithIgnoreList = { Required = 3,
-        Types = {"Instance","Ray","table","boolean","boolean"} },
-    FindPartOnRayWithWhitelist  = { Required = 3,
-        Types = {"Instance","Ray","table","boolean"} },
+    FindPartOnRayWithIgnoreList = { Required = 2,
+        Types = {"Instance","Ray"} },
+    FindPartOnRayWithWhitelist  = { Required = 2,
+        Types = {"Instance","Ray"} },
     FindPartOnRay               = { Required = 2,
-        Types = {"Instance","Ray","Instance","boolean","boolean"} },
+        Types = {"Instance","Ray"} },
     Raycast                     = { Required = 3,
-        Types = {"Instance","Vector3","Vector3","RaycastParams"} },
+        Types = {"Instance","Vector3","Vector3"} },
 }
 
 local function validateArgs(args, schema)
-    if #args < schema.Required then return false end
     local matches = 0
-    for i, arg in ipairs(args) do
-        if schema.Types[i] and typeof(arg) == schema.Types[i] then
+    for i = 1, schema.Required do
+        if typeof(args[i]) == schema.Types[i] then
             matches = matches + 1
         end
     end
@@ -1137,135 +1146,110 @@ local function getDirectionTo(origin, position)
     return (position - origin).Unit * 1000
 end
 
-local function applyManipulation(dir)
-    if Config.Manipulation then
-        return dir + Vector3.new(
-            math.random(-5,5)*0.01,
-            math.random(-5,5)*0.01,
-            math.random(-5,5)*0.01)
+-- Manipulation: RaycastParams que ignora TODO el mapa (solo colisiona con chars)
+local function makeWallbreakParams()
+    local p = RaycastParams.new()
+    p.FilterType = Enum.RaycastFilterType.Include
+    -- incluir solo personajes de jugadores como colisionables
+    local chars = {}
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= player and pl.Character then
+            table.insert(chars, pl.Character)
+        end
     end
-    return dir
+    p.FilterDescendantsInstances = chars
+    return p
 end
 
 local saHookOk, saHookErr = pcall(function()
-    local oldNamecallSA
-    oldNamecallSA = hookmetamethod(game, "__namecall", newcclosure(function(...)
-        local Method    = getnamecallmethod()
-        local Arguments = {...}   -- [1]=self, [2..n]=args reales
-        local self_obj  = Arguments[1]
+    local oldNC
+    oldNC = hookmetamethod(game, "__namecall", newcclosure(function(...)
+        local Method = getnamecallmethod()
+        local Args   = {...}  -- Args[1]=self, Args[2..]=argumentos reales
 
-        -- Condiciones para interceptar (igual que el script universal)
-        if Config.SilentAimEnabled
-        and self_obj == Workspace
-        and not checkcaller()
-        and math.random(100) <= Config.HitChance then
+        if not Config.SilentAimEnabled then return oldNC(...) end
+        if checkcaller()               then return oldNC(...) end
+        if Args[1] ~= Workspace        then return oldNC(...) end
+        if math.random(100) > Config.HitChance then return oldNC(...) end
 
-            local hitPart = nil
+        -- Validar que es un raycast de disparo por tipos
+        local isRay = (Method == "Raycast"
+            and validateArgs(Args, ExpectedArgs.Raycast))
+        local isLegacy = (Method == "FindPartOnRay"
+            or Method == "FindPartOnRayWithIgnoreList"
+            or Method == "FindPartOnRayWithWhitelist")
+            and typeof(Args[2]) == "Ray"
 
-            -- ── FindPartOnRayWithIgnoreList ──────────────────
-            if Method == "FindPartOnRayWithIgnoreList"
-            and validateArgs(Arguments, ExpectedArgs.FindPartOnRayWithIgnoreList) then
-                local target = getBestTarget()
-                if target and target.Character then
-                    hitPart = getTargetPart(target.Character)
-                end
-                if hitPart then
-                    local ray    = Arguments[2]
-                    local origin = ray.Origin
-                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
-                    Arguments[2] = Ray.new(origin, dir)
-                    return oldNamecallSA(unpack(Arguments))
-                end
+        if not isRay and not isLegacy then return oldNC(...) end
 
-            -- ── FindPartOnRayWithWhitelist ───────────────────
-            elseif Method == "FindPartOnRayWithWhitelist"
-            and validateArgs(Arguments, ExpectedArgs.FindPartOnRayWithWhitelist) then
-                local target = getBestTarget()
-                if target and target.Character then
-                    hitPart = getTargetPart(target.Character)
-                end
-                if hitPart then
-                    local ray    = Arguments[2]
-                    local origin = ray.Origin
-                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
-                    Arguments[2] = Ray.new(origin, dir)
-                    return oldNamecallSA(unpack(Arguments))
-                end
+        local target = getBestTarget()
+        if not target or not target.Character then return oldNC(...) end
+        local part = getTargetPart(target.Character)
+        if not part then return oldNC(...) end
 
-            -- ── FindPartOnRay ────────────────────────────────
-            elseif (Method == "FindPartOnRay" or Method == "findPartOnRay")
-            and validateArgs(Arguments, ExpectedArgs.FindPartOnRay) then
-                local target = getBestTarget()
-                if target and target.Character then
-                    hitPart = getTargetPart(target.Character)
-                end
-                if hitPart then
-                    local ray    = Arguments[2]
-                    local origin = ray.Origin
-                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
-                    Arguments[2] = Ray.new(origin, dir)
-                    return oldNamecallSA(unpack(Arguments))
-                end
-
-            -- ── Raycast ──────────────────────────────────────
-            elseif Method == "Raycast"
-            and validateArgs(Arguments, ExpectedArgs.Raycast) then
-                local target = getBestTarget()
-                if target and target.Character then
-                    hitPart = getTargetPart(target.Character)
-                end
-                if hitPart then
-                    local origin = Arguments[2]  -- Vector3
-                    Arguments[3] = applyManipulation(getDirectionTo(origin, hitPart.Position))
-                    return oldNamecallSA(unpack(Arguments))
-                end
+        if isRay then
+            -- Raycast(origin, dir, params?)
+            local origin = Args[2]
+            local newDir = getDirectionTo(origin, part.Position)
+            Args[3] = newDir
+            -- Manipulation = wallbreak: reemplazar params para ignorar paredes
+            if Config.Manipulation then
+                Args[4] = makeWallbreakParams()
             end
+            return oldNC(table.unpack(Args))
+        else
+            -- FindPartOnRay legacy
+            local ray    = Args[2]
+            local origin = ray.Origin
+            local newDir = getDirectionTo(origin, part.Position)
+            Args[2] = Ray.new(origin, newDir)
+            -- Manipulation = ignorar lista de ignore (no pasar paredes como ignore)
+            if Config.Manipulation and Method == "FindPartOnRayWithIgnoreList" then
+                Args[3] = {}  -- lista vacía = no ignorar nada = bala pasa todo
+            end
+            return oldNC(table.unpack(Args))
         end
-
-        return oldNamecallSA(...)
     end))
 end)
 
 if not saHookOk then
-    -- hookmetamethod no disponible en este exploit, usar fallback getrawmetatable
-    warn("[NEXUS] hookmetamethod falló ("..tostring(saHookErr).."), usando fallback...")
+    warn("[NEXUS] hookmetamethod no disponible: "..tostring(saHookErr))
     local mt = getrawmetatable and getrawmetatable(game)
     if mt then
         pcall(function()
             setreadonly(mt, false)
-            local oldNC = mt.__namecall
+            local oldNC2 = mt.__namecall
             mt.__namecall = newcclosure(function(self, ...)
                 local method = getnamecallmethod()
-                if Config.SilentAimEnabled
-                and self == Workspace
-                and math.random(100) <= Config.HitChance
-                and (method=="Raycast" or method=="FindPartOnRay"
-                  or method=="FindPartOnRayWithIgnoreList") then
-                    local args = {...}
-                    -- validación por tipos para no tocar raycasts de cámara
-                    if method == "Raycast" and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
-                        local target = getBestTarget()
-                        if target and target.Character then
-                            local part = getTargetPart(target.Character)
-                            if part then
-                                args[2] = applyManipulation(getDirectionTo(args[1], part.Position))
-                                return oldNC(self, table.unpack(args))
-                            end
+                if not Config.SilentAimEnabled then return oldNC2(self,...) end
+                if self ~= Workspace           then return oldNC2(self,...) end
+                if math.random(100) > Config.HitChance then return oldNC2(self,...) end
+                local args = {...}
+                if method == "Raycast" and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
+                    local target = getBestTarget()
+                    if target and target.Character then
+                        local part = getTargetPart(target.Character)
+                        if part then
+                            args[2] = getDirectionTo(args[1], part.Position)
+                            if Config.Manipulation then args[3] = makeWallbreakParams() end
+                            return oldNC2(self, table.unpack(args))
                         end
-                    elseif method ~= "Raycast" and typeof(args[1])=="Ray" then
-                        local target = getBestTarget()
-                        if target and target.Character then
-                            local part = getTargetPart(target.Character)
-                            if part then
-                                local origin = args[1].Origin
-                                local dir    = applyManipulation(getDirectionTo(origin, part.Position))
-                                args[1]      = Ray.new(origin, dir)
-                                return oldNC(self, table.unpack(args))
+                    end
+                elseif (method=="FindPartOnRay" or method=="FindPartOnRayWithIgnoreList")
+                and typeof(args[1])=="Ray" then
+                    local target = getBestTarget()
+                    if target and target.Character then
+                        local part = getTargetPart(target.Character)
+                        if part then
+                            args[1] = Ray.new(args[1].Origin, getDirectionTo(args[1].Origin, part.Position))
+                            if Config.Manipulation and method=="FindPartOnRayWithIgnoreList" then
+                                args[2] = {}
                             end
+                            return oldNC2(self, table.unpack(args))
                         end
                     end
                 end
-                return oldNC(self, ...)
+                return oldNC2(self,...)
             end)
             setreadonly(mt, true)
         end)
@@ -1692,4 +1676,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v4.3] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.4] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
