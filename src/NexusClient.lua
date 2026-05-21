@@ -65,7 +65,9 @@ local DefaultConfig = {
     FlySpeed          = 50,
     RageMode          = false,
     ItemInHand        = true,   -- mostrar qué tiene en la mano
-    InstaInteract     = false,  -- auto trigger ProximityPrompt al tocar
+    InstaInteract     = false,  -- trigger al tocar/click
+    InstaInteractAuto = false,  -- trigger automático al acercarse
+    InstaInteractFilter = "",   -- palabras filtro separadas por coma (vacío=todos)
     AutoSellLoot      = false,  -- vender loot automáticamente cada 10s
     -- Lista Blanca (array de nombres de usuario)
     Whitelist         = {},
@@ -967,12 +969,55 @@ makeToggle(pageExt, "Ver Item en Mano", "ItemInHand")
 
 -- ── INSTA INTERACT ───────────────────────────────────────────
 sectionLabel(pageExt, "Insta Interact")
-makeToggle(pageExt, "Insta Interact", "InstaInteract")
+makeToggle(pageExt, "Insta Interact (al tocar)", "InstaInteract")
+makeToggle(pageExt, "Auto Interact (al acercarse)", "InstaInteractAuto")
 do
+    -- Filtro de nombre: solo activa prompts cuyo ActionText o nombre
+    -- contenga alguna de estas palabras (vacío = todos)
+    -- El jugador puede escribir palabras separadas por coma
+    local filterRow = Instance.new("Frame")
+    filterRow.Size             = UDim2.new(1,0,0,34)
+    filterRow.BackgroundColor3 = Color3.fromRGB(4,22,38)
+    filterRow.BorderSizePixel  = 0
+    filterRow.Parent           = pageExt
+    corner(filterRow, 5)
+    stroke(filterRow, Color3.fromRGB(0,160,255), 1, 0.45)
+
+    local filterLbl = Instance.new("TextLabel")
+    filterLbl.Size             = UDim2.new(0,80,1,0)
+    filterLbl.Position         = UDim2.fromOffset(6,0)
+    filterLbl.BackgroundTransparency = 1
+    filterLbl.Text             = "Filtro:"
+    filterLbl.TextColor3       = Color3.fromRGB(150,220,255)
+    filterLbl.Font             = Enum.Font.GothamMedium
+    filterLbl.TextSize         = 11
+    filterLbl.TextXAlignment   = Enum.TextXAlignment.Left
+    filterLbl.Parent           = filterRow
+
+    local filterBox = Instance.new("TextBox")
+    filterBox.Size             = UDim2.new(1,-90,1,-8)
+    filterBox.Position         = UDim2.fromOffset(86,4)
+    filterBox.BackgroundColor3 = Color3.fromRGB(3,14,26)
+    filterBox.BorderSizePixel  = 0
+    filterBox.Text             = Config.InstaInteractFilter or ""
+    filterBox.PlaceholderText  = "ej: Interact,Open,Collect"
+    filterBox.PlaceholderColor3= Color3.fromRGB(80,120,150)
+    filterBox.TextColor3       = Color3.fromRGB(200,248,255)
+    filterBox.Font             = Enum.Font.GothamMedium
+    filterBox.TextSize         = 11
+    filterBox.ClearTextOnFocus = false
+    filterBox.Parent           = filterRow
+    corner(filterBox, 4)
+
+    filterBox.FocusLost:Connect(function()
+        Config.InstaInteractFilter = filterBox.Text
+        saveConfig()
+    end)
+
     local infoLbl = Instance.new("TextLabel")
-    infoLbl.Size              = UDim2.new(1,0,0,28)
+    infoLbl.Size              = UDim2.new(1,0,0,32)
     infoLbl.BackgroundTransparency = 1
-    infoLbl.Text              = "Toca / click → activa ProximityPrompt más cercano"
+    infoLbl.Text              = "Filtro vacío = activa CUALQUIER prompt\nEscribe palabras del ActionText separadas por coma"
     infoLbl.TextColor3        = Color3.fromRGB(100,180,220)
     infoLbl.Font              = Enum.Font.GothamMedium
     infoLbl.TextSize          = 10
@@ -1809,11 +1854,32 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- INSTA INTERACT — click/tap + auto al entrar en rango
+-- INSTA INTERACT — manual (click/tap) + auto (proximidad)
+-- Con filtro por ActionText para no activar prompts no deseados
 -- ══════════════════════════════════════════════════════════════
 local lastTriggered = {}
 
+local function promptPassesFilter(prompt)
+    local filter = Config.InstaInteractFilter or ""
+    if filter == "" then return true end  -- sin filtro = todos
+    local actionText = (prompt.ActionText or ""):lower()
+    local objText    = (prompt.ObjectText or ""):lower()
+    local name       = (prompt.Name or ""):lower()
+    for word in filter:gmatch("[^,]+") do
+        word = word:match("^%s*(.-)%s*$"):lower()  -- trim
+        if word ~= "" then
+            if actionText:find(word, 1, true)
+            or objText:find(word, 1, true)
+            or name:find(word, 1, true) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 local function triggerPrompt(prompt)
+    if not promptPassesFilter(prompt) then return end
     local now = os.clock()
     if lastTriggered[prompt] and (now - lastTriggered[prompt]) < 1.5 then return end
     lastTriggered[prompt] = now
@@ -1824,11 +1890,11 @@ local function triggerPrompt(prompt)
     end)
 end
 
--- Auto-trigger por proximidad (cada 0.3s)
+-- Auto-trigger por proximidad (solo si InstaInteractAuto está activo)
 task.spawn(function()
     while gui.Parent do
         task.wait(0.3)
-        if Config.InstaInteract then
+        if Config.InstaInteractAuto then
             local myChar = player.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot then
