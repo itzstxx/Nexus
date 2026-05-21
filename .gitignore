@@ -1,0 +1,7 @@
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.tmp
+.DS_Store
+Thumbs.db
