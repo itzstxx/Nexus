@@ -4,14 +4,10 @@
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
     ║  NOVEDADES v4.1:                                             ║
-    ║  · ANTI-CRASH Silent Aim: flag re-entrada + pcall completo   ║
-    ║  · Botón minimizar (—) y cerrar (×) en la barra del título   ║
-    ║  · Resize respeta estado minimizado                          ║
-    ║  NOVEDADES v4.0:                                             ║
-    ║  · Silent Aim arreglado + Manipulation mejorado              ║
-    ║  · Lista Blanca: jugadores en WL nunca son targetados        ║
-    ║  · FOV Color, Snapline Color, Colores ESP personalizables    ║
-    ║  · Modo Round Toggles, Auto Load Theme                       ║
+    ║  · FIX: cámara ya no se congela con silent aim activo        ║
+    ║  · FIX: panel más ancho — todas las opciones visibles        ║
+    ║  · Lista Blanca, colores ESP/FOV/Snapline personalizables    ║
+    ║  · Manipulation, RoundToggles, AutoLoadTheme                 ║
     ╚══════════════════════════════════════════════════════════════╝
 ]]
 
@@ -193,11 +189,8 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- PANEL PRINCIPAL
 -- ══════════════════════════════════════════════════════════════
-local MIN_W, MIN_H = 340, 480
-local panelW, panelH = 420, 580
--- Estado minimizado (solo muestra la barra del título)
-local isMinimized = false
-local MINI_H = 42
+local MIN_W, MIN_H = 480, 560
+local panelW, panelH = 560, 660
 
 local main = Instance.new("Frame")
 main.Name                    = "NexusPanel"
@@ -248,7 +241,7 @@ titleLbl.TextXAlignment     = Enum.TextXAlignment.Left
 titleLbl.Parent             = header
 
 local subtitleLbl = Instance.new("TextLabel")
-subtitleLbl.Size               = UDim2.new(1,-140,0,16)
+subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
 subtitleLbl.Text               = "v4.1 — Hecho por EnanoTop1 (stx)"
@@ -257,62 +250,6 @@ subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
 subtitleLbl.TextXAlignment     = Enum.TextXAlignment.Left
 subtitleLbl.Parent             = header
-
--- Botón minimizar (—)
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size              = UDim2.fromOffset(28, 28)
-minimizeBtn.Position          = UDim2.new(1, -64, 0, 8)
-minimizeBtn.BackgroundColor3  = Color3.fromRGB(0, 40, 70)
-minimizeBtn.BorderSizePixel   = 0
-minimizeBtn.Text              = "—"
-minimizeBtn.TextColor3        = Color3.fromRGB(150, 230, 255)
-minimizeBtn.Font              = Enum.Font.GothamBold
-minimizeBtn.TextSize          = 14
-minimizeBtn.AutoButtonColor   = false
-minimizeBtn.ZIndex            = 6
-minimizeBtn.Parent            = header
-corner(minimizeBtn, 5)
-stroke(minimizeBtn, Color3.fromRGB(0, 160, 255), 1, 0.3)
-
--- Botón cerrar (×)
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size              = UDim2.fromOffset(28, 28)
-closeBtn.Position          = UDim2.new(1, -32, 0, 8)
-closeBtn.BackgroundColor3  = Color3.fromRGB(60, 10, 10)
-closeBtn.BorderSizePixel   = 0
-closeBtn.Text              = "×"
-closeBtn.TextColor3        = Color3.fromRGB(255, 90, 90)
-closeBtn.Font              = Enum.Font.GothamBold
-closeBtn.TextSize          = 18
-closeBtn.AutoButtonColor   = false
-closeBtn.ZIndex            = 6
-closeBtn.Parent            = header
-corner(closeBtn, 5)
-stroke(closeBtn, Color3.fromRGB(200, 30, 30), 1, 0.3)
-
--- Lógica minimizar
-local fullSize = UDim2.fromOffset(panelW, panelH)
-local function toggleMinimize()
-    isMinimized = not isMinimized
-    if isMinimized then
-        minimizeBtn.Text = "▢"
-        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-            Size = UDim2.fromOffset(main.AbsoluteSize.X, MINI_H)
-        }):Play()
-    else
-        minimizeBtn.Text = "—"
-        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-            Size = UDim2.fromOffset(main.AbsoluteSize.X, panelH)
-        }):Play()
-        fullSize = UDim2.fromOffset(main.AbsoluteSize.X, panelH)
-    end
-end
-minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
-
--- Lógica cerrar (oculta el panel, FAB sigue visible)
-closeBtn.MouseButton1Click:Connect(function()
-    main.Visible = false
-end)
 
 -- Perfil card
 local profileCard = Instance.new("Frame")
@@ -1107,9 +1044,6 @@ local function getBestTarget()
 end
 
 -- Hook metatables para silent aim
--- ANTI-CRASH: flag para evitar re-entrada recursiva en el hook
-local _silentAimInHook = false
-
 local mt = getrawmetatable and getrawmetatable(game)
 if mt then
     local oldNamecall
@@ -1118,68 +1052,86 @@ if mt then
             setreadonly(mt, false)
             oldNamecall = mt.__namecall
             mt.__namecall = newcclosure(function(self, ...)
-                -- ANTI-CRASH: si ya estamos dentro del hook (re-entrada), pasar directo
-                if _silentAimInHook then
-                    return oldNamecall(self, ...)
-                end
-
                 local method = getnamecallmethod()
 
                 if Config.SilentAimEnabled
+                and self == Workspace
                 and (method == "FindPartOnRayWithIgnoreList"
                   or method == "FindPartOnRay"
                   or method == "Raycast") then
 
-                    if math.random(100) <= Config.HitChance then
-                        -- ANTI-CRASH: activar flag antes de llamar getBestTarget
-                        -- para que cualquier raycast interno no vuelva a entrar
-                        _silentAimInHook = true
-                        local target = nil
-                        local ok2, err2 = pcall(function()
-                            target = getBestTarget()
-                        end)
-                        _silentAimInHook = false
-
-                        if not ok2 then
-                            warn("[NEXUS] getBestTarget error: "..tostring(err2))
-                            return oldNamecall(self, ...)
+                    -- ARREGLO CÁMARA: solo interceptar si el origen del ray
+                    -- viene del personaje local (tool/arma), NO de la cámara sola.
+                    -- Esto evita que la cámara se quede congelada.
+                    local args = {...}
+                    local rayOrigin
+                    if method == "Raycast" then
+                        rayOrigin = args[1]  -- Vector3 origen
+                    else
+                        local ray = args[1]
+                        if typeof(ray) == "Ray" then
+                            rayOrigin = ray.Origin
                         end
+                    end
 
+                    local myChar = player.Character
+                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local camPos = camera.CFrame.Position
+
+                    -- Si el origen está muy lejos del personaje Y muy cerca de la cámara,
+                    -- es un raycast de la cámara/movimiento — NO interceptar
+                    local isShootRay = false
+                    if rayOrigin and myRoot then
+                        local distFromChar = (rayOrigin - myRoot.Position).Magnitude
+                        local distFromCam  = (rayOrigin - camPos).Magnitude
+                        -- Es un disparo si viene de cerca del personaje o la cámara apunta al juego
+                        -- La clave: raycasts de cámara tienen origen exactamente en camPos
+                        -- Raycasts de disparo vienen de la herramienta (cerca del char)
+                        if distFromCam < 2 then
+                            -- Origen exactamente en la cámara → raycast de cámara, NO tocar
+                            isShootRay = false
+                        elseif distFromChar < 8 then
+                            -- Origen cerca del personaje → raycast de disparo
+                            isShootRay = true
+                        else
+                            -- Origen intermedio (tool en mano) → tratar como disparo
+                            isShootRay = true
+                        end
+                    elseif rayOrigin then
+                        -- Sin personaje, chequeamos si viene de la cámara
+                        local distFromCam = (rayOrigin - camPos).Magnitude
+                        isShootRay = distFromCam >= 2
+                    end
+
+                    if isShootRay and math.random(100) <= Config.HitChance then
+                        local target = getBestTarget()
                         if target and target.Character then
                             local part = getTargetPart(target.Character)
                             if part then
-                                local args = {...}
-                                local ok3, err3 = pcall(function()
-                                    if method == "Raycast" then
-                                        local origin = camera.CFrame.Position
-                                        local dir    = (part.Position - origin)
+                                if method == "Raycast" then
+                                    local origin = args[1]
+                                    local dir    = (part.Position - origin)
+                                    if Config.Manipulation then
+                                        dir = dir + Vector3.new(
+                                            math.random(-5,5)*0.01,
+                                            math.random(-5,5)*0.01,
+                                            math.random(-5,5)*0.01)
+                                    end
+                                    args[2] = dir
+                                else
+                                    local ray = args[1]
+                                    if typeof(ray) == "Ray" then
+                                        local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
                                         if Config.Manipulation then
-                                            dir = dir + Vector3.new(
+                                            newDir = newDir + Vector3.new(
                                                 math.random(-5,5)*0.01,
                                                 math.random(-5,5)*0.01,
                                                 math.random(-5,5)*0.01)
                                         end
-                                        args[1] = origin
-                                        args[2] = dir
-                                    else
-                                        local ray = args[1]
-                                        if typeof(ray) == "Ray" then
-                                            local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
-                                            if Config.Manipulation then
-                                                newDir = newDir + Vector3.new(
-                                                    math.random(-5,5)*0.01,
-                                                    math.random(-5,5)*0.01,
-                                                    math.random(-5,5)*0.01)
-                                            end
-                                            args[1] = Ray.new(ray.Origin, newDir)
-                                        end
+                                        args[1] = Ray.new(ray.Origin, newDir)
                                     end
-                                end)
-                                if ok3 then
-                                    return oldNamecall(self, table.unpack(args))
-                                else
-                                    warn("[NEXUS] Hook args error: "..tostring(err3))
                                 end
+                                return oldNamecall(self, table.unpack(args))
                             end
                         end
                     end
@@ -1423,13 +1375,10 @@ do
     UserInputService.InputChanged:Connect(function(inp)
         if resizing and (inp.UserInputType == Enum.UserInputType.MouseMovement
         or inp.UserInputType == Enum.UserInputType.Touch) then
-            -- No redimensionar altura si está minimizado
-            if isMinimized then resizing = false; return end
             local d  = inp.Position - resizeStart
             local nW = math.clamp(startSz.X+d.X, MIN_W, 700)
             local nH = math.clamp(startSz.Y+d.Y, MIN_H, 800)
             main.Size = UDim2.fromOffset(nW, nH)
-            panelH = nH  -- actualizar panelH para que minimizar/restaurar use el nuevo tamaño
         end
     end)
 end
