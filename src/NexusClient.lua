@@ -1045,54 +1045,93 @@ end
 
 -- Hook metatables para silent aim
 -- ══════════════════════════════════════════════════════════════
--- FLAG DE DISPARO — solo interceptamos raycasts mientras el
--- jugador está presionando el botón de ataque/tap en pantalla.
--- Esto evita que los raycasts de cámara sean redirigidos.
+-- FLAG DE DISPARO  —  v2  (fix: no activar con joystick móvil)
 -- ══════════════════════════════════════════════════════════════
+--
+--  PROBLEMA ANTERIOR:
+--  isFiring se activaba con cualquier tap en X > 35% de pantalla,
+--  lo que incluía el joystick derecho (girar cámara) y los botones
+--  de movimiento. Resultado: silent aim pegaba aunque el jugador
+--  solo estuviera caminando sin disparar.
+--
+--  SOLUCIÓN:
+--  1. En PC: solo MouseButton1 activa isFiring (sin cambios).
+--  2. En móvil: solo lo activa la señal Tool.Activated del arma
+--     equipada, que es el evento real de "el jugador disparó".
+--     Si el juego no usa Tool (e.g. botón custom), se usa la zona
+--     inferior-derecha PEQUEÑA (último 22% X y último 30% Y),
+--     que es donde suelen estar los botones de ataque en juegos
+--     como Arsenal, Phantom Forces Mobile, etc.
+--     El joystick está en la esquina inferior-IZQUIERDA → no choca.
+--  3. Ventana de tiempo máxima: isFiring se apaga solo a los 0.25s
+--     aunque no llegue el InputEnded (por lag o tap rápido).
+--     Antes el delay era 0.08s, insuficiente para algunos armas
+--     con animación larga — ahora 0.25s cubre bien sin ser excesivo.
+--  4. El hook además valida self == Workspace, así que raycasts
+--     de la cámara y del terrain NUNCA se interceptan.
+--
 local isFiring     = false
-local fireDebounce = 0   -- timestamp del último disparo
+local fireDebounce = 0
+local FIRE_WINDOW  = 0.25   -- segundos máximos que isFiring puede estar en true
 
--- Detecta tap en la mitad derecha de la pantalla (zona de ataque en móvil)
--- y clicks de ratón en PC
-local function onFireStart(inp)
+-- Activa isFiring con ventana de tiempo automática
+local function setFiring()
+    isFiring     = true
+    fireDebounce = os.clock()
+    task.delay(FIRE_WINDOW, function()
+        -- Solo apaga si no hubo otro disparo más reciente
+        if os.clock() - fireDebounce >= FIRE_WINDOW - 0.01 then
+            isFiring = false
+        end
+    end)
+end
+
+-- PC: MouseButton1
+UserInputService.InputBegan:Connect(function(inp)
     if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-        isFiring = true; fireDebounce = os.clock()
-    elseif inp.UserInputType == Enum.UserInputType.Touch then
-        -- Solo zona derecha de pantalla (botones Puño/Teléfono)
+        setFiring()
+    end
+end)
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+        task.delay(0.06, function() isFiring = false end)
+    end
+end)
+
+-- Móvil: zona de botón de ataque (esquina inferior-derecha)
+-- X > 78% AND Y > 70% — lejos del joystick izquierdo y la cámara
+UserInputService.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.Touch then
         local vp = camera.ViewportSize
-        if inp.Position.X > vp.X * 0.35 and not main.Visible then
-            isFiring = true; fireDebounce = os.clock()
-        elseif inp.Position.X > vp.X * 0.35 then
-            isFiring = true; fireDebounce = os.clock()
+        local rx  = inp.Position.X / vp.X   -- 0.0 izq → 1.0 der
+        local ry  = inp.Position.Y / vp.Y   -- 0.0 arriba → 1.0 abajo
+        -- Botón de ataque: derecha (>78%) y abajo (>68%)
+        if rx > 0.78 and ry > 0.68 then
+            setFiring()
         end
     end
-end
-local function onFireEnd(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1
-    or inp.UserInputType == Enum.UserInputType.Touch then
-        -- Pequeño delay para que el raycast del juego alcance a procesarse
-        task.delay(0.08, function() isFiring = false end)
+end)
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.Touch then
+        task.delay(0.06, function() isFiring = false end)
     end
-end
+end)
 
-UserInputService.InputBegan:Connect(onFireStart)
-UserInputService.InputEnded:Connect(onFireEnd)
-
--- También detectamos activación por tool (arma equipada)
+-- Tool.Activated: señal oficial de "el arma disparó"
+-- Esta es la forma más confiable y no tiene false positives
 local function watchTool(tool)
-    if not tool then return end
+    if not tool or not tool:IsA("Tool") then return end
     tool.Activated:Connect(function()
-        isFiring = true; fireDebounce = os.clock()
-        task.delay(0.15, function() isFiring = false end)
+        setFiring()
     end)
 end
 local function watchChar(char)
     if not char then return end
-    for _, tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") then watchTool(tool) end
+    for _, child in ipairs(char:GetChildren()) do
+        watchTool(child)
     end
     char.ChildAdded:Connect(function(c)
-        if c:IsA("Tool") then watchTool(c) end
+        watchTool(c)
     end)
 end
 watchChar(player.Character)
