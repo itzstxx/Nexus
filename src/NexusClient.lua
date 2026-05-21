@@ -1,13 +1,13 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v4.6                        ║
+    ║           NEXUS  —  NexusClient  v4.7                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v4.6:                                             ║
-    ║  · HOOK reescrito igual al script universal (hookmetamethod)  ║
-    ║  · checkcaller() + ValidateArguments → cámara libre          ║
-    ║  · Fallback getrawmetatable para exploits sin hookmetamethod  ║
-    ║  · Panel 600×800, pinch dos dedos, Lista Blanca, colores ESP  ║
+    ║  NOVEDADES v4.7:                                             ║
+    ║  · Fly arreglado en móvil (joystick virtual funciona)        ║
+    ║  · InstaInteract: auto al entrar en rango + cooldown 1.5s   ║
+    ║  · Caja Fuerte: guardar inventario / sacar todo              ║
+    ║  · Loot Buyer: vender todo + Auto-Sell cada 10s             ║
     ╚══════════════════════════════════════════════════════════════╝
 ]]
 
@@ -66,6 +66,7 @@ local DefaultConfig = {
     RageMode          = false,
     ItemInHand        = true,   -- mostrar qué tiene en la mano
     InstaInteract     = false,  -- auto trigger ProximityPrompt al tocar
+    AutoSellLoot      = false,  -- vender loot automáticamente cada 10s
     -- Lista Blanca (array de nombres de usuario)
     Whitelist         = {},
 }
@@ -251,7 +252,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "v4.6 — Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.7 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -899,7 +900,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v4.6\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.7\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -1350,7 +1351,345 @@ local clothes = {
 }
 for _, c in ipairs(clothes) do shopBtn(pageShop, c[2], c[1], "Clothing") end
 
--- FIN SHOP
+-- FIN SHOP (items de tienda)
+
+-- ══════════════════════════════════════════════════════════════
+-- CAJA FUERTE (Safe) — guardar inventario / sacar items
+-- ══════════════════════════════════════════════════════════════
+sectionLabel(pageShop, "🔒 Caja Fuerte (Safe)")
+
+do
+    -- Remotes conocidos de SLR para la caja fuerte
+    local safeRemotes = {
+        { path={"Remotes","StashItem"} },
+        { path={"Remotes","SafeStore"} },
+        { path={"Remotes","Safe"} },
+        { path={"Remotes","StorageDeposit"} },
+        { path={"Remotes","DepositItem"} },
+        { path={"Remotes","Stash"} },
+    }
+    local retrieveRemotes = {
+        { path={"Remotes","RetrieveItem"} },
+        { path={"Remotes","SafeRetrieve"} },
+        { path={"Remotes","StorageWithdraw"} },
+        { path={"Remotes","WithdrawItem"} },
+    }
+
+    local safeRemote     = nil
+    local retrieveRemote = nil
+    local capturedSafe   = nil  -- args capturados del jugador
+
+    local function findSafeRemote()
+        for _, entry in ipairs(safeRemotes) do
+            local cur = RS; local ok = true
+            for _, part in ipairs(entry.path) do
+                cur = cur:FindFirstChild(part)
+                if not cur then ok=false; break end
+            end
+            if ok and cur and cur:IsA("RemoteEvent") then
+                safeRemote = cur; break
+            end
+        end
+        for _, entry in ipairs(retrieveRemotes) do
+            local cur = RS; local ok = true
+            for _, part in ipairs(entry.path) do
+                cur = cur:FindFirstChild(part)
+                if not cur then ok=false; break end
+            end
+            if ok and cur and cur:IsA("RemoteEvent") then
+                retrieveRemote = cur; break
+            end
+        end
+        -- fallback descendant scan
+        if not safeRemote or not retrieveRemote then
+            for _, v in ipairs(RS:GetDescendants()) do
+                if v:IsA("RemoteEvent") then
+                    local n = v.Name:lower()
+                    if not safeRemote and (n:find("stash") or n:find("safe") or n:find("deposit") or n:find("store")) then
+                        safeRemote = v
+                    end
+                    if not retrieveRemote and (n:find("retrieve") or n:find("withdraw")) then
+                        retrieveRemote = v
+                    end
+                end
+            end
+        end
+    end
+    task.spawn(function() task.wait(2); findSafeRemote() end)
+
+    -- Capturar automáticamente cuando el jugador usa la caja manualmente
+    pcall(function()
+        local oldNC_safe
+        oldNC_safe = hookmetamethod(game, "__namecall", newcclosure(function(...)
+            local method = getnamecallmethod()
+            local args   = {...}
+            if method == "FireServer" and not checkcaller()
+            and args[1] and typeof(args[1])=="Instance" and args[1]:IsA("RemoteEvent") then
+                local n = args[1].Name:lower()
+                if n:find("stash") or n:find("safe") or n:find("deposit") then
+                    safeRemote   = args[1]
+                    capturedSafe = {table.unpack(args, 2)}
+                elseif n:find("retrieve") or n:find("withdraw") then
+                    retrieveRemote = args[1]
+                end
+            end
+            return oldNC_safe(...)
+        end))
+    end)
+
+    -- Status label
+    local safeStatusLbl = Instance.new("TextLabel")
+    safeStatusLbl.Size              = UDim2.new(1,0,0,28)
+    safeStatusLbl.BackgroundColor3  = Color3.fromRGB(3,20,10)
+    safeStatusLbl.BackgroundTransparency = 0.3
+    safeStatusLbl.BorderSizePixel   = 0
+    safeStatusLbl.Text              = "⚠️ Interactúa con la caja una vez para capturar el remote"
+    safeStatusLbl.TextColor3        = Color3.fromRGB(255,200,60)
+    safeStatusLbl.Font              = Enum.Font.GothamMedium
+    safeStatusLbl.TextSize          = 10
+    safeStatusLbl.TextWrapped       = true
+    safeStatusLbl.Parent            = pageShop
+    corner(safeStatusLbl, 4)
+
+    task.spawn(function()
+        while gui.Parent do
+            task.wait(1)
+            if safeRemote then
+                safeStatusLbl.Text       = "✅ Safe remote: "..safeRemote.Name
+                safeStatusLbl.TextColor3 = Color3.fromRGB(80,255,160)
+            end
+        end
+    end)
+
+    -- Botón Guardar todo el inventario
+    local storeBtn = Instance.new("TextButton")
+    storeBtn.Size              = UDim2.new(1,0,0,30)
+    storeBtn.BackgroundColor3  = Color3.fromRGB(0,40,60)
+    storeBtn.BorderSizePixel   = 0
+    storeBtn.Text              = "📦 Guardar inventario → Caja"
+    storeBtn.TextColor3        = Color3.fromRGB(100,210,255)
+    storeBtn.Font              = Enum.Font.GothamBold
+    storeBtn.TextSize          = 11
+    storeBtn.AutoButtonColor   = false
+    storeBtn.Parent            = pageShop
+    corner(storeBtn, 4)
+    stroke(storeBtn, Color3.fromRGB(0,150,255), 1, 0.4)
+
+    storeBtn.MouseButton1Click:Connect(function()
+        if not safeRemote then findSafeRemote() end
+        if not safeRemote then
+            storeBtn.Text = "❌ Interactúa con la caja primero"
+            task.delay(2, function() storeBtn.Text = "📦 Guardar inventario → Caja" end)
+            return
+        end
+        local myChar = player.Character
+        if not myChar then return end
+        local stored = 0
+        for _, tool in ipairs(myChar:GetChildren()) do
+            if tool:IsA("Tool") then
+                if capturedSafe and #capturedSafe >= 1 then
+                    local a = {table.unpack(capturedSafe)}; a[1] = tool.Name
+                    pcall(function() safeRemote:FireServer(table.unpack(a)) end)
+                else
+                    pcall(function() safeRemote:FireServer(tool.Name) end)
+                    pcall(function() safeRemote:FireServer(tool.Name, 1) end)
+                end
+                stored = stored + 1
+                task.wait(0.15)
+            end
+        end
+        -- También vaciar el backpack
+        for _, tool in ipairs(player.Backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                if capturedSafe and #capturedSafe >= 1 then
+                    local a = {table.unpack(capturedSafe)}; a[1] = tool.Name
+                    pcall(function() safeRemote:FireServer(table.unpack(a)) end)
+                else
+                    pcall(function() safeRemote:FireServer(tool.Name) end)
+                    pcall(function() safeRemote:FireServer(tool.Name, 1) end)
+                end
+                stored = stored + 1
+                task.wait(0.15)
+            end
+        end
+        storeBtn.Text = "✅ Guardados: "..stored.." items"
+        task.delay(2, function() storeBtn.Text = "📦 Guardar inventario → Caja" end)
+    end)
+
+    -- Botón Sacar todo de la caja
+    local retrieveBtn = Instance.new("TextButton")
+    retrieveBtn.Size              = UDim2.new(1,0,0,30)
+    retrieveBtn.BackgroundColor3  = Color3.fromRGB(20,40,0)
+    retrieveBtn.BorderSizePixel   = 0
+    retrieveBtn.Text              = "📤 Sacar todo de la Caja"
+    retrieveBtn.TextColor3        = Color3.fromRGB(160,255,100)
+    retrieveBtn.Font              = Enum.Font.GothamBold
+    retrieveBtn.TextSize          = 11
+    retrieveBtn.AutoButtonColor   = false
+    retrieveBtn.Parent            = pageShop
+    corner(retrieveBtn, 4)
+    stroke(retrieveBtn, Color3.fromRGB(80,200,0), 1, 0.4)
+
+    retrieveBtn.MouseButton1Click:Connect(function()
+        if not retrieveRemote then findSafeRemote() end
+        if not retrieveRemote then
+            retrieveBtn.Text = "❌ Abre la caja manualmente primero"
+            task.delay(2, function() retrieveBtn.Text = "📤 Sacar todo de la Caja" end)
+            return
+        end
+        -- Intentar sacar todo (el juego normalmente lo maneja con un solo FireServer)
+        pcall(function() retrieveRemote:FireServer() end)
+        pcall(function() retrieveRemote:FireServer("all") end)
+        pcall(function() retrieveRemote:FireServer(true) end)
+        retrieveBtn.Text = "✅ Solicitud enviada"
+        task.delay(2, function() retrieveBtn.Text = "📤 Sacar todo de la Caja" end)
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- LOOT BUYER — vender loot automáticamente
+-- ══════════════════════════════════════════════════════════════
+sectionLabel(pageShop, "💰 Loot Buyer")
+
+do
+    local lootRemotes = {
+        { path={"Remotes","SellLoot"} },
+        { path={"Remotes","LootBuyer"} },
+        { path={"Remotes","Sell"} },
+        { path={"Remotes","SellItem"} },
+        { path={"Remotes","SellAll"} },
+        { path={"Remotes","PawnShop"} },
+    }
+    local lootRemote   = nil
+    local capturedLoot = nil
+
+    local function findLootRemote()
+        for _, entry in ipairs(lootRemotes) do
+            local cur = RS; local ok = true
+            for _, part in ipairs(entry.path) do
+                cur = cur:FindFirstChild(part)
+                if not cur then ok=false; break end
+            end
+            if ok and cur and cur:IsA("RemoteEvent") then
+                lootRemote = cur; break
+            end
+        end
+        if not lootRemote then
+            for _, v in ipairs(RS:GetDescendants()) do
+                if v:IsA("RemoteEvent") then
+                    local n = v.Name:lower()
+                    if n:find("sell") or n:find("loot") or n:find("pawn") then
+                        lootRemote = v; break
+                    end
+                end
+            end
+        end
+    end
+    task.spawn(function() task.wait(2); findLootRemote() end)
+
+    -- Capturar cuando el jugador vende manualmente
+    pcall(function()
+        local oldNC_loot
+        oldNC_loot = hookmetamethod(game, "__namecall", newcclosure(function(...)
+            local method = getnamecallmethod()
+            local args   = {...}
+            if method == "FireServer" and not checkcaller()
+            and args[1] and typeof(args[1])=="Instance" and args[1]:IsA("RemoteEvent") then
+                local n = args[1].Name:lower()
+                if n:find("sell") or n:find("loot") or n:find("pawn") then
+                    lootRemote   = args[1]
+                    capturedLoot = {table.unpack(args, 2)}
+                end
+            end
+            return oldNC_loot(...)
+        end))
+    end)
+
+    -- Status
+    local lootStatusLbl = Instance.new("TextLabel")
+    lootStatusLbl.Size              = UDim2.new(1,0,0,28)
+    lootStatusLbl.BackgroundColor3  = Color3.fromRGB(3,20,10)
+    lootStatusLbl.BackgroundTransparency = 0.3
+    lootStatusLbl.BorderSizePixel   = 0
+    lootStatusLbl.Text              = "⚠️ Vende loot manualmente una vez para capturar el remote"
+    lootStatusLbl.TextColor3        = Color3.fromRGB(255,200,60)
+    lootStatusLbl.Font              = Enum.Font.GothamMedium
+    lootStatusLbl.TextSize          = 10
+    lootStatusLbl.TextWrapped       = true
+    lootStatusLbl.Parent            = pageShop
+    corner(lootStatusLbl, 4)
+
+    task.spawn(function()
+        while gui.Parent do
+            task.wait(1)
+            if lootRemote then
+                lootStatusLbl.Text       = "✅ Loot remote: "..lootRemote.Name
+                lootStatusLbl.TextColor3 = Color3.fromRGB(80,255,160)
+            end
+        end
+    end)
+
+    -- Botón vender todo el loot
+    local sellBtn = Instance.new("TextButton")
+    sellBtn.Size              = UDim2.new(1,0,0,30)
+    sellBtn.BackgroundColor3  = Color3.fromRGB(40,30,0)
+    sellBtn.BorderSizePixel   = 0
+    sellBtn.Text              = "💰 Vender todo el Loot"
+    sellBtn.TextColor3        = Color3.fromRGB(255,210,60)
+    sellBtn.Font              = Enum.Font.GothamBold
+    sellBtn.TextSize          = 11
+    sellBtn.AutoButtonColor   = false
+    sellBtn.Parent            = pageShop
+    corner(sellBtn, 4)
+    stroke(sellBtn, Color3.fromRGB(200,150,0), 1, 0.4)
+
+    sellBtn.MouseButton1Click:Connect(function()
+        if not lootRemote then findLootRemote() end
+        if not lootRemote then
+            sellBtn.Text = "❌ Vende loot manualmente primero"
+            task.delay(2, function() sellBtn.Text = "💰 Vender todo el Loot" end)
+            return
+        end
+        if capturedLoot then
+            pcall(function() lootRemote:FireServer(table.unpack(capturedLoot)) end)
+        end
+        -- Intentar formatos comunes de "vender todo"
+        pcall(function() lootRemote:FireServer("all") end)
+        pcall(function() lootRemote:FireServer(true) end)
+        pcall(function() lootRemote:FireServer() end)
+        -- Vender cada item del inventario individualmente como fallback
+        local myChar = player.Character
+        if myChar then
+            for _, tool in ipairs(myChar:GetChildren()) do
+                if tool:IsA("Tool") then
+                    pcall(function() lootRemote:FireServer(tool.Name) end)
+                    pcall(function() lootRemote:FireServer(tool.Name, 1) end)
+                    task.wait(0.1)
+                end
+            end
+        end
+        sellBtn.Text = "✅ Loot vendido"
+        task.delay(2, function() sellBtn.Text = "💰 Vender todo el Loot" end)
+    end)
+
+    -- Auto-sell toggle (vende cada X segundos si estás cerca del Loot Buyer)
+    makeToggle(pageShop, "🔄 Auto-Sell cada 10s", "AutoSellLoot", nil)
+    -- Agregar la key al DefaultConfig
+    if Config.AutoSellLoot == nil then Config.AutoSellLoot = false end
+
+    task.spawn(function()
+        while gui.Parent do
+            task.wait(10)
+            if Config.AutoSellLoot and lootRemote then
+                if capturedLoot then
+                    pcall(function() lootRemote:FireServer(table.unpack(capturedLoot)) end)
+                end
+                pcall(function() lootRemote:FireServer("all") end)
+                pcall(function() lootRemote:FireServer() end)
+            end
+        end
+    end)
+end
 -- ══════════════════════════════════════════════════════════════
 -- FLY LÓGICA — RenderStepped mueve el personaje
 -- ══════════════════════════════════════════════════════════════
@@ -1444,16 +1783,70 @@ RunService.RenderStepped:Connect(function()
             moveVec = moveVec - Vector3.new(0,1,0)
         end
 
+        -- Joystick móvil: leer MoveDirection del Humanoid
+        local hum2 = char:FindFirstChildOfClass("Humanoid")
+        if hum2 and hum2.MoveDirection.Magnitude > 0.1 then
+            local md = hum2.MoveDirection
+            -- Proyectar la dirección del joystick sobre los ejes de la cámara (sin Y)
+            local flatLook  = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+            local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+            if flatLook.Magnitude > 0.01 then flatLook = flatLook.Unit end
+            if flatRight.Magnitude > 0.01 then flatRight = flatRight.Unit end
+            local worldFlat = Vector3.new(md.X, 0, md.Z)
+            if worldFlat.Magnitude > 0.01 then
+                moveVec = moveVec + worldFlat.Unit
+            end
+        end
+
         if moveVec.Magnitude > 0 then
             bp.Position = bp.Position + moveVec.Unit * speed * 0.016
+        else
+            -- Sin input: mantener posición actual (sin deriva)
+            bp.Position = root.Position
         end
         bg.CFrame = CFrame.new(root.Position, root.Position + camCF.LookVector)
     end
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- INSTA INTERACT — detecta click/tap y activa ProximityPrompt más cercano
+-- INSTA INTERACT — click/tap + auto al entrar en rango
 -- ══════════════════════════════════════════════════════════════
+local lastTriggered = {}
+
+local function triggerPrompt(prompt)
+    local now = os.clock()
+    if lastTriggered[prompt] and (now - lastTriggered[prompt]) < 1.5 then return end
+    lastTriggered[prompt] = now
+    pcall(function() fireclickdetector(prompt) end)
+    pcall(function()
+        prompt:InputHoldBegin()
+        task.delay(0.1, function() pcall(function() prompt:InputHoldEnd() end) end)
+    end)
+end
+
+-- Auto-trigger por proximidad (cada 0.3s)
+task.spawn(function()
+    while gui.Parent do
+        task.wait(0.3)
+        if Config.InstaInteract then
+            local myChar = player.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                for _, v in ipairs(Workspace:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Enabled then
+                        local pp  = v.Parent
+                        local pos = (pp and pp:IsA("BasePart")) and pp.Position
+                                 or (pp and pp:FindFirstChild("PrimaryPart") and pp.PrimaryPart.Position)
+                        if pos and (pos - myRoot.Position).Magnitude < v.MaxActivationDistance then
+                            triggerPrompt(v)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 local function triggerNearestPrompt()
     if not Config.InstaInteract then return end
     local myChar = player.Character
@@ -2295,4 +2688,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v4.6] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.7] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
