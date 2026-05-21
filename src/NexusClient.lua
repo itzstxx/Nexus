@@ -1,13 +1,13 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           NEXUS  —  NexusClient  v4.2                        ║
+    ║           NEXUS  —  NexusClient  v4.3                        ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╠══════════════════════════════════════════════════════════════╣
-    ║  NOVEDADES v4.2:                                             ║
-    ║  · FIX DEFINITIVO: cámara nunca se congela (flag isFiring)   ║
-    ║  · Panel 600×800, pinch dos dedos para redimensionar         ║
-    ║  · Lista Blanca, colores ESP/FOV/Snapline                    ║
-    ║  · Manipulation, RoundToggles, AutoLoadTheme                 ║
+    ║  NOVEDADES v4.3:                                             ║
+    ║  · HOOK reescrito igual al script universal (hookmetamethod)  ║
+    ║  · checkcaller() + ValidateArguments → cámara libre          ║
+    ║  · Fallback getrawmetatable para exploits sin hookmetamethod  ║
+    ║  · Panel 600×800, pinch dos dedos, Lista Blanca, colores ESP  ║
     ╚══════════════════════════════════════════════════════════════╝
 ]]
 
@@ -244,7 +244,7 @@ local subtitleLbl = Instance.new("TextLabel")
 subtitleLbl.Size               = UDim2.new(1,-100,0,16)
 subtitleLbl.Position           = UDim2.fromOffset(90, 46)
 subtitleLbl.BackgroundTransparency = 1
-subtitleLbl.Text               = "v4.2 — Hecho por EnanoTop1 (stx)"
+subtitleLbl.Text               = "v4.3 — Hecho por EnanoTop1 (stx)"
 subtitleLbl.TextColor3         = Color3.fromRGB(70, 210, 255)
 subtitleLbl.Font               = Enum.Font.GothamMedium
 subtitleLbl.TextSize           = 11
@@ -888,7 +888,7 @@ do
     info.BackgroundColor3  = Color3.fromRGB(3,14,26)
     info.BackgroundTransparency = 0.3
     info.BorderSizePixel   = 0
-    info.Text              = "NEXUS v4.2\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
+    info.Text              = "NEXUS v4.3\nHecho por EnanoTop1 (stx)\n\nConfig: "..CONFIG_FILE.."\nUser: "..player.Name
     info.TextColor3        = Color3.fromRGB(140,210,255)
     info.Font              = Enum.Font.GothamMedium
     info.TextSize          = 11
@@ -1099,67 +1099,176 @@ watchChar(player.Character)
 player.CharacterAdded:Connect(watchChar)
 
 
-if mt then
-    local oldNamecall
-    if pcall(function() return mt.__namecall end) then
-        local ok, msg = pcall(function()
+-- ══════════════════════════════════════════════════════════════
+-- SILENT AIM HOOK  (mismo patrón del script universal que funciona)
+-- Diferencias clave vs versión anterior:
+--   · hookmetamethod en vez de getrawmetatable+setreadonly
+--   · checkcaller() para no interceptar nuestros propios calls
+--   · ValidateArguments verifica tipos antes de redirigir
+--     → esto evita interceptar raycasts de cámara/movimiento
+--   · Args indexados correctamente: en __namecall con (...)
+--     Arguments[1]=self, [2]=origin/ray, [3]=dir/params
+-- ══════════════════════════════════════════════════════════════
+
+-- Estructura de argumentos esperados por método (igual que el script universal)
+local ExpectedArgs = {
+    FindPartOnRayWithIgnoreList = { Required = 3,
+        Types = {"Instance","Ray","table","boolean","boolean"} },
+    FindPartOnRayWithWhitelist  = { Required = 3,
+        Types = {"Instance","Ray","table","boolean"} },
+    FindPartOnRay               = { Required = 2,
+        Types = {"Instance","Ray","Instance","boolean","boolean"} },
+    Raycast                     = { Required = 3,
+        Types = {"Instance","Vector3","Vector3","RaycastParams"} },
+}
+
+local function validateArgs(args, schema)
+    if #args < schema.Required then return false end
+    local matches = 0
+    for i, arg in ipairs(args) do
+        if schema.Types[i] and typeof(arg) == schema.Types[i] then
+            matches = matches + 1
+        end
+    end
+    return matches >= schema.Required
+end
+
+local function getDirectionTo(origin, position)
+    return (position - origin).Unit * 1000
+end
+
+local function applyManipulation(dir)
+    if Config.Manipulation then
+        return dir + Vector3.new(
+            math.random(-5,5)*0.01,
+            math.random(-5,5)*0.01,
+            math.random(-5,5)*0.01)
+    end
+    return dir
+end
+
+local saHookOk, saHookErr = pcall(function()
+    local oldNamecallSA
+    oldNamecallSA = hookmetamethod(game, "__namecall", newcclosure(function(...)
+        local Method    = getnamecallmethod()
+        local Arguments = {...}   -- [1]=self, [2..n]=args reales
+        local self_obj  = Arguments[1]
+
+        -- Condiciones para interceptar (igual que el script universal)
+        if Config.SilentAimEnabled
+        and self_obj == Workspace
+        and not checkcaller()
+        and math.random(100) <= Config.HitChance then
+
+            local hitPart = nil
+
+            -- ── FindPartOnRayWithIgnoreList ──────────────────
+            if Method == "FindPartOnRayWithIgnoreList"
+            and validateArgs(Arguments, ExpectedArgs.FindPartOnRayWithIgnoreList) then
+                local target = getBestTarget()
+                if target and target.Character then
+                    hitPart = getTargetPart(target.Character)
+                end
+                if hitPart then
+                    local ray    = Arguments[2]
+                    local origin = ray.Origin
+                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
+                    Arguments[2] = Ray.new(origin, dir)
+                    return oldNamecallSA(unpack(Arguments))
+                end
+
+            -- ── FindPartOnRayWithWhitelist ───────────────────
+            elseif Method == "FindPartOnRayWithWhitelist"
+            and validateArgs(Arguments, ExpectedArgs.FindPartOnRayWithWhitelist) then
+                local target = getBestTarget()
+                if target and target.Character then
+                    hitPart = getTargetPart(target.Character)
+                end
+                if hitPart then
+                    local ray    = Arguments[2]
+                    local origin = ray.Origin
+                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
+                    Arguments[2] = Ray.new(origin, dir)
+                    return oldNamecallSA(unpack(Arguments))
+                end
+
+            -- ── FindPartOnRay ────────────────────────────────
+            elseif (Method == "FindPartOnRay" or Method == "findPartOnRay")
+            and validateArgs(Arguments, ExpectedArgs.FindPartOnRay) then
+                local target = getBestTarget()
+                if target and target.Character then
+                    hitPart = getTargetPart(target.Character)
+                end
+                if hitPart then
+                    local ray    = Arguments[2]
+                    local origin = ray.Origin
+                    local dir    = applyManipulation(getDirectionTo(origin, hitPart.Position))
+                    Arguments[2] = Ray.new(origin, dir)
+                    return oldNamecallSA(unpack(Arguments))
+                end
+
+            -- ── Raycast ──────────────────────────────────────
+            elseif Method == "Raycast"
+            and validateArgs(Arguments, ExpectedArgs.Raycast) then
+                local target = getBestTarget()
+                if target and target.Character then
+                    hitPart = getTargetPart(target.Character)
+                end
+                if hitPart then
+                    local origin = Arguments[2]  -- Vector3
+                    Arguments[3] = applyManipulation(getDirectionTo(origin, hitPart.Position))
+                    return oldNamecallSA(unpack(Arguments))
+                end
+            end
+        end
+
+        return oldNamecallSA(...)
+    end))
+end)
+
+if not saHookOk then
+    -- hookmetamethod no disponible en este exploit, usar fallback getrawmetatable
+    warn("[NEXUS] hookmetamethod falló ("..tostring(saHookErr).."), usando fallback...")
+    local mt = getrawmetatable and getrawmetatable(game)
+    if mt then
+        pcall(function()
             setreadonly(mt, false)
-            oldNamecall = mt.__namecall
+            local oldNC = mt.__namecall
             mt.__namecall = newcclosure(function(self, ...)
                 local method = getnamecallmethod()
-
-                -- Solo interceptar si:
-                -- 1. Silent aim activado
-                -- 2. El jugador está disparando/atacando ahora mismo (isFiring)
-                -- 3. Es un raycast del Workspace (no de cámara u otro servicio)
                 if Config.SilentAimEnabled
-                and isFiring
                 and self == Workspace
-                and (method == "FindPartOnRayWithIgnoreList"
-                  or method == "FindPartOnRay"
-                  or method == "Raycast") then
-
-                    if math.random(100) <= Config.HitChance then
+                and math.random(100) <= Config.HitChance
+                and (method=="Raycast" or method=="FindPartOnRay"
+                  or method=="FindPartOnRayWithIgnoreList") then
+                    local args = {...}
+                    -- validación por tipos para no tocar raycasts de cámara
+                    if method == "Raycast" and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
                         local target = getBestTarget()
                         if target and target.Character then
                             local part = getTargetPart(target.Character)
                             if part then
-                                local args = {...}
-                                if method == "Raycast" then
-                                    local origin = args[1]
-                                    local dir    = (part.Position - origin)
-                                    if Config.Manipulation then
-                                        dir = dir + Vector3.new(
-                                            math.random(-5,5)*0.01,
-                                            math.random(-5,5)*0.01,
-                                            math.random(-5,5)*0.01)
-                                    end
-                                    args[2] = dir
-                                else
-                                    local ray = args[1]
-                                    if typeof(ray) == "Ray" then
-                                        local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
-                                        if Config.Manipulation then
-                                            newDir = newDir + Vector3.new(
-                                                math.random(-5,5)*0.01,
-                                                math.random(-5,5)*0.01,
-                                                math.random(-5,5)*0.01)
-                                        end
-                                        args[1] = Ray.new(ray.Origin, newDir)
-                                    end
-                                end
-                                return oldNamecall(self, table.unpack(args))
+                                args[2] = applyManipulation(getDirectionTo(args[1], part.Position))
+                                return oldNC(self, table.unpack(args))
+                            end
+                        end
+                    elseif method ~= "Raycast" and typeof(args[1])=="Ray" then
+                        local target = getBestTarget()
+                        if target and target.Character then
+                            local part = getTargetPart(target.Character)
+                            if part then
+                                local origin = args[1].Origin
+                                local dir    = applyManipulation(getDirectionTo(origin, part.Position))
+                                args[1]      = Ray.new(origin, dir)
+                                return oldNC(self, table.unpack(args))
                             end
                         end
                     end
                 end
-                return oldNamecall(self, ...)
+                return oldNC(self, ...)
             end)
             setreadonly(mt, true)
         end)
-        if not ok then
-            warn("[NEXUS] Silent Aim hook no disponible: "..tostring(msg))
-        end
     end
 end
 
@@ -1583,4 +1692,4 @@ task.spawn(function()
 end)
 
 syncFAB()
-print("[NEXUS v4.2] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
+print("[NEXUS v4.3] Cargado — Hecho por EnanoTop1 (stx) | User: " .. player.Name)
