@@ -421,10 +421,6 @@ local function makeColorRow(page,text,rk,gk,bk)
         local fill=Instance.new("Frame")
         fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
         fill.BorderSizePixel=0; fill.Parent=track
-        local sliderHit=Instance.new("TextButton")
-        sliderHit.Size=UDim2.new(1,-76,1,0); sliderHit.Position=UDim2.fromOffset(66,0)
-        sliderHit.BackgroundTransparency=1; sliderHit.Text=""; sliderHit.AutoButtonColor=false
-        sliderHit.ZIndex=(track.ZIndex or 1)+2; sliderHit.Parent=sr
 
         local function setVal(v)
             v=math.clamp(math.floor(v),0,255)
@@ -441,7 +437,7 @@ local function makeColorRow(page,text,rk,gk,bk)
             local abs=track.AbsolutePosition; local sz=track.AbsoluteSize
             setVal(math.clamp((inp.Position.X-abs.X)/sz.X,0,1)*255)
         end
-        sliderHit.InputBegan:Connect(function(inp)
+        track.InputBegan:Connect(function(inp)
             if inp.UserInputType==Enum.UserInputType.MouseButton1
             or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
         end)
@@ -1419,4 +1415,4 @@ RunService.RenderStepped:Connect(function()
     if not snapTargetP then snapLineDraw.Visible=false end
 end)
 
-print("[SYY v5.1] Loaded — "..player.Name)
+print("[SYY  "..player.Name)
