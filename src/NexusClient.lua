@@ -1,6 +1,6 @@
 --[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║           SYY  —  SyyClient  v5.1                        ║
+    ║           SYY  —  SyyClient  V1                          ║
     ║           Hecho por EnanoTop1 (stx)                          ║
     ╚══════════════════════════════════════════════════════════════╝
 ]]
@@ -162,7 +162,7 @@ end)
 local titleLbl=Instance.new("TextLabel")
 titleLbl.Size=UDim2.new(1,-110,0,isMobile and 26 or 24)
 titleLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 6 or 4)
-titleLbl.BackgroundTransparency=1; titleLbl.Text="SYY"
+titleLbl.BackgroundTransparency=1; titleLbl.Text="SYY V1"
 titleLbl.TextColor3=C_ACCENT; titleLbl.Font=Enum.Font.GothamBlack
 titleLbl.TextSize=isMobile and 20 or 18
 titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
@@ -170,7 +170,7 @@ titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
 local subLbl=Instance.new("TextLabel")
 subLbl.Size=UDim2.new(1,-110,0,13)
 subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 34 or 27)
-subLbl.BackgroundTransparency=1; subLbl.Text="v5.1  ·  EnanoTop1 (stx)  ·  "..player.Name
+subLbl.BackgroundTransparency=1; subLbl.Text="V1  ·  EnanoTop1 (stx)  ·  "..player.Name
 subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
@@ -402,7 +402,6 @@ local function makeColorRow(page,text,rk,gk,bk)
     end
     prev.BackgroundColor3=color()
 
-    local rgbSetters={}
     local function makeRgbSlider(label,key)
         local sr=Instance.new("Frame")
         sr.Size=UDim2.new(1,0,0,ROW_H); sr.BackgroundColor3=C_ROW
@@ -429,7 +428,6 @@ local function makeColorRow(page,text,rk,gk,bk)
             fill.Size=UDim2.new(v/255,0,1,0)
             refreshPreview()
         end
-        rgbSetters[key]=setVal
         setVal(Config[key])
 
         local sliding=false
@@ -472,7 +470,8 @@ local function makeColorRow(page,text,rk,gk,bk)
     local ci=1
     prev.MouseButton1Click:Connect(function()
         ci=ci%#presets+1
-        rgbSetters[rk](presets[ci][1]); rgbSetters[gk](presets[ci][2]); rgbSetters[bk](presets[ci][3])
+        Config[rk]=presets[ci][1]; Config[gk]=presets[ci][2]; Config[bk]=presets[ci][3]
+        refreshPreview()
         saveConfig()
     end)
     return container
@@ -553,7 +552,7 @@ end
 local pageAim=tabPages[1]
 secLabel(pageAim,"Silent Aim")
 makeToggle(pageAim,"Silent Aim",       "SilentAimEnabled")
-makeToggle(pageAim,"FOV Check",        "VisibleCheck")
+makeToggle(pageAim,"VisibleCheck",     "VisibleCheck")
 makeToggle(pageAim,"Manipulation",     "Manipulation")
 makeSlider(pageAim,"HitChance %",      "HitChance",1,100)
 secLabel(pageAim,"FOV")
@@ -564,7 +563,7 @@ secLabel(pageAim,"Snapline")
 makeToggle(pageAim,"Snapline",         "Snapline")
 makeColorRow(pageAim,"Snap Color",     "SnapColorR","SnapColorG","SnapColorB")
 secLabel(pageAim,"Target")
-makeDropdown(pageAim,"Target Part",    "TargetPart",{"Head","UpperTorso","LowerTorso","Random"})
+makeDropdown(pageAim,"Target Part",    "TargetPart",{"Head","UpperTorso","LowerTorso","Pierna","Pecho","Combo","Random"})
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS
@@ -577,9 +576,6 @@ makeColorRow(pageVis,"Box Color",      "BoxColorR","BoxColorG","BoxColorB")
 makeToggle(pageVis,"Skeleton",         "EspSkeleton")
 makeColorRow(pageVis,"Skel Color",     "SkelColorR","SkelColorG","SkelColorB")
 makeToggle(pageVis,"Health Bar",       "EspHealthBar")
-makeColorRow(pageVis,"Health Low Color","HealthLowColorR","HealthLowColorG","HealthLowColorB")
-makeColorRow(pageVis,"Health Full Color","HealthHighColorR","HealthHighColorG","HealthHighColorB")
-makeColorRow(pageVis,"Health BG Color", "HealthBgColorR","HealthBgColorG","HealthBgColorB")
 makeToggle(pageVis,"Distancia",        "EspDistance")
 makeToggle(pageVis,"Nombres",          "EspNames")
 makeColorRow(pageVis,"Name Color",     "NameColorR","NameColorG","NameColorB")
@@ -1253,29 +1249,71 @@ RunService.RenderStepped:Connect(function()
         if Config.SilentAimEnabled then
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
             local bestD=math.huge; local bestPos=nil
+            local myChar2=player.Character
+            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
+            local camLook=camera.CFrame.LookVector
+
             for _,p in ipairs(Players:GetPlayers()) do
                 if p==player or isWhitelisted(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
                 local root=char:FindFirstChild("HumanoidRootPart")
                 if not hum or hum.Health<=0 or not root then continue end
-                local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                if not onS then continue end
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if d2>Config.FovRadius then continue end
+
+                -- VisibleCheck ON: tiene que estar en pantalla y dentro del FOV (comportamiento original)
+                -- VisibleCheck OFF: solo aplica a enemigos detrás del jugador (no importa si están en pantalla)
                 if Config.VisibleCheck then
+                    local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                    if not onS then continue end
+                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                    if d2>Config.FovRadius then continue end
+                    -- visible check: no puede haber paredes entre cámara y objetivo
                     local lc=player.Character
                     if lc then
                         local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
                         if ok and #obs>0 then continue end
                     end
-                end
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.TargetPart
-                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso") end
-                    local hp2=char:FindFirstChild(pn) or root
-                    bestPos=hp2.Position
+                    if d2<bestD then
+                        bestD=d2
+                        local pn=Config.TargetPart
+                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                        elseif pn=="Pierna" then pn="LowerTorso"
+                        elseif pn=="Pecho" then pn="UpperTorso"
+                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                        local hp2=char:FindFirstChild(pn) or root
+                        bestPos=hp2.Position
+                    end
+                else
+                    -- Sin VisibleCheck: el objetivo debe estar DETRÁS del jugador
+                    -- (el vector desde myRoot hacia root apunta en dirección opuesta a camLook)
+                    if not myRoot2 then continue end
+                    local toTarget=(root.Position-myRoot2.Position)
+                    local toTargetFlat=Vector3.new(toTarget.X,0,toTarget.Z)
+                    local camFlat=Vector3.new(camLook.X,0,camLook.Z)
+                    -- dot negativo = está detrás
+                    local dot = toTargetFlat.Magnitude>0.01 and camFlat:Dot(toTargetFlat.Unit) or 0
+                    if dot >= 0 then continue end  -- está delante, ignorar
+
+                    -- sin paredes entre el jugador y el objetivo
+                    local lc=player.Character
+                    if lc then
+                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                        if ok and #obs>0 then continue end
+                    end
+
+                    -- distancia en pantalla al centro (para elegir el más cercano al centro si hay varios)
+                    local sp2,_=camera:WorldToViewportPoint(root.Position)
+                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                    if d2<bestD then
+                        bestD=d2
+                        local pn=Config.TargetPart
+                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                        elseif pn=="Pierna" then pn="LowerTorso"
+                        elseif pn=="Pecho" then pn="UpperTorso"
+                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                        local hp2=char:FindFirstChild(pn) or root
+                        bestPos=hp2.Position
+                    end
                 end
             end
             cachedTargetPos=bestPos
@@ -1379,4 +1417,4 @@ RunService.RenderStepped:Connect(function()
     if not snapTargetP then snapLineDraw.Visible=false end
 end)
 
-print("[SYY v5.1] Loaded — "..player.Name)
+print("[SYY V1] Loaded — "..player.Name)
