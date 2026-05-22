@@ -1086,37 +1086,27 @@ local function stopFly()
     local char=player.Character; if not char then return end
     local hum=char:FindFirstChildOfClass("Humanoid")
     local root=char:FindFirstChild("HumanoidRootPart")
-    if hum then
-        hum.PlatformStand=false
-        hum.AutoRotate=true
-    end
+    if hum then hum.PlatformStand=false end
     if root then
-        local bp=root:FindFirstChild("SyyFlyBP")
-        local bv=root:FindFirstChild("SyyFlyBV")
-        local bg=root:FindFirstChild("SyyFlyBG")
-        if bp then bp:Destroy() end
-        if bv then bv:Destroy() end
-        if bg then bg:Destroy() end
+        local bp=root:FindFirstChild("SyyFlyBP"); local bg=root:FindFirstChild("SyyFlyBG")
+        if bp then bp:Destroy() end; if bg then bg:Destroy() end
     end
 end
 local function startFly()
+    flyActive=true
     local char=player.Character; if not char then return end
     local hum=char:FindFirstChildOfClass("Humanoid")
     local root=char:FindFirstChild("HumanoidRootPart")
     if not hum or not root then return end
-    flyActive=true
-    hum.PlatformStand=false
-    hum.AutoRotate=false
-    local oldBp=root:FindFirstChild("SyyFlyBP")
-    if oldBp then oldBp:Destroy() end
-    if not root:FindFirstChild("SyyFlyBV") then
-        local bv=Instance.new("BodyVelocity"); bv.Name="SyyFlyBV"
-        bv.MaxForce=Vector3.new(9e9,9e9,9e9); bv.P=15000
-        bv.Velocity=Vector3.zero; bv.Parent=root
+    hum.PlatformStand=true
+    if not root:FindFirstChild("SyyFlyBP") then
+        local bp=Instance.new("BodyPosition"); bp.Name="SyyFlyBP"
+        bp.MaxForce=Vector3.new(1e5,1e5,1e5); bp.Position=root.Position
+        bp.D=500; bp.P=10000; bp.Parent=root
     end
     if not root:FindFirstChild("SyyFlyBG") then
         local bg=Instance.new("BodyGyro"); bg.Name="SyyFlyBG"
-        bg.MaxTorque=Vector3.new(9e9,9e9,9e9); bg.D=100; bg.P=15000
+        bg.MaxTorque=Vector3.new(1e5,1e5,1e5); bg.D=100; bg.P=10000
         bg.CFrame=root.CFrame; bg.Parent=root
     end
 end
