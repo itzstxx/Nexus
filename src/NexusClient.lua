@@ -36,7 +36,7 @@ local DefaultConfig = {
     HealthLowColorR=255,HealthLowColorG=80,HealthLowColorB=80,
     HealthHighColorR=80,HealthHighColorG=255,HealthHighColorB=80,
     HealthBgColorR=20,HealthBgColorG=20,HealthBgColorB=20,
-    FlyEnabled=false, FlySpeed=50, RageMode=false, InfStamina=false,
+    RageMode=false, InfStamina=false,
     Whitelist={},
 }
 local Config = {}
@@ -51,6 +51,36 @@ local function loadConfig()
 end
 local function saveConfig() pcall(function() writefile(CONFIG_FILE,HttpService:JSONEncode(Config)) end) end
 loadConfig()
+
+local function clearFlyArtifacts(char)
+    char = char or player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+        hum.AutoRotate = true
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        pcall(function()
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraSubject = hum
+        end)
+    end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
+        for _, name in ipairs({"SyyFlyBP","SyyFlyBV","SyyFlyBG"}) do
+            local obj = root:FindFirstChild(name)
+            if obj then obj:Destroy() end
+        end
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+end
+
+clearFlyArtifacts(player.Character)
+player.CharacterAdded:Connect(function(char)
+    task.wait(0.25)
+    clearFlyArtifacts(char)
+end)
 
 local function isWhitelisted(p)
     for _,n in ipairs(Config.Whitelist) do if n:lower()==p.Name:lower() then return true end end; return false
@@ -606,9 +636,6 @@ makeToggle(pageExt,"🔴 Rage Mode","RageMode",function(on)
         saveConfig()
     end
 end)
-secLabel(pageExt,"Fly")
-makeToggle(pageExt,"Fly Enabled","FlyEnabled")
-makeSlider(pageExt,"Velocidad Fly","FlySpeed",10,200)
 
 -- ── INF STAMINA ──────────────────────────────────────────────
 secLabel(pageExt,"Stamina")
@@ -1080,50 +1107,6 @@ end)
 -- ══════════════════════════════════════════════════════════════
 -- FLY
 -- ══════════════════════════════════════════════════════════════
-local flyActive=false
-local function stopFly()
-    flyActive=false
-    local char=player.Character; if not char then return end
-    local hum=char:FindFirstChildOfClass("Humanoid")
-    local root=char:FindFirstChild("HumanoidRootPart")
-    if hum then
-        hum.PlatformStand=false
-        hum.AutoRotate=true
-    end
-    if root then
-        local bp=root:FindFirstChild("SyyFlyBP")
-        local bv=root:FindFirstChild("SyyFlyBV")
-        local bg=root:FindFirstChild("SyyFlyBG")
-        if bp then bp:Destroy() end
-        if bv then bv:Destroy() end
-        if bg then bg:Destroy() end
-    end
-end
-local function startFly()
-    local char=player.Character; if not char then return end
-    local hum=char:FindFirstChildOfClass("Humanoid")
-    local root=char:FindFirstChild("HumanoidRootPart")
-    if not hum or not root then return end
-    flyActive=true
-    hum.PlatformStand=false
-    hum.AutoRotate=false
-    local oldBp=root:FindFirstChild("SyyFlyBP")
-    if oldBp then oldBp:Destroy() end
-    if not root:FindFirstChild("SyyFlyBV") then
-        local bv=Instance.new("BodyVelocity"); bv.Name="SyyFlyBV"
-        bv.MaxForce=Vector3.new(9e9,9e9,9e9); bv.P=15000
-        bv.Velocity=Vector3.zero; bv.Parent=root
-    end
-    if not root:FindFirstChild("SyyFlyBG") then
-        local bg=Instance.new("BodyGyro"); bg.Name="SyyFlyBG"
-        bg.MaxTorque=Vector3.new(9e9,9e9,9e9); bg.D=100; bg.P=15000
-        bg.CFrame=root.CFrame; bg.Parent=root
-    end
-end
-player.CharacterAdded:Connect(function()
-    flyActive=false; task.wait(0.5); if Config.FlyEnabled then startFly() end
-end)
-
 -- ══════════════════════════════════════════════════════════════
 -- DRAWINGS
 -- ══════════════════════════════════════════════════════════════
@@ -1262,47 +1245,6 @@ end)
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
-
-    -- FLY
-    if Config.FlyEnabled~=flyActive then
-        if Config.FlyEnabled then startFly() else stopFly() end
-    end
-    if Config.FlyEnabled and flyActive then
-        local char=player.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local bv=root and root:FindFirstChild("SyyFlyBV")
-        local bg=root and root:FindFirstChild("SyyFlyBG")
-        if not root or not bv or not bg then
-            flyActive=false
-        elseif bv and bg then
-            local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv=mv-camCF.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv=mv+camCF.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv=mv+Vector3.yAxis end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.E) then mv=mv-Vector3.yAxis end
-            local hum2=char:FindFirstChildOfClass("Humanoid")
-            if hum2 and hum2.MoveDirection.Magnitude>0.1 then
-                local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
-                if wf.Magnitude>0.01 then mv=mv+wf.Unit end
-                if UserInputService.TouchEnabled then
-                    local lookY=math.clamp(camCF.LookVector.Y,-1,1)
-                    if math.abs(lookY)>0.15 then mv=mv+Vector3.yAxis*lookY end
-                end
-            end
-            if hum2 then
-                hum2.PlatformStand=false
-                hum2.AutoRotate=false
-                if hum2.Jump then mv=mv+Vector3.yAxis end
-                pcall(function() hum2:ChangeState(Enum.HumanoidStateType.Freefall) end)
-            end
-            local vel=mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
-            bv.Velocity=vel
-            root.AssemblyLinearVelocity=vel
-            bg.CFrame=CFrame.new(root.Position,root.Position+camCF.LookVector)
-        end
-    end
 
     -- TARGET CACHE (cada 2 frames)
     if frame%2==0 then
