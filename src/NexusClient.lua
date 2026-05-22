@@ -139,7 +139,7 @@ local logoImg=Instance.new("ImageLabel")
 logoImg.Size=UDim2.fromOffset(logoSize,logoSize)
 logoImg.Position=UDim2.new(0,6,0.5,-(logoSize/2))
 logoImg.BackgroundTransparency=1
-logoImg.Image="rbxassetid://136884211519141"
+logoImg.Image="rbxassetid://77130965021335"
 logoImg.ScaleType=Enum.ScaleType.Fit
 logoImg.ImageTransparency=0
 logoImg.Parent=header
@@ -421,6 +421,10 @@ local function makeColorRow(page,text,rk,gk,bk)
         local fill=Instance.new("Frame")
         fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
         fill.BorderSizePixel=0; fill.Parent=track
+        local sliderHit=Instance.new("TextButton")
+        sliderHit.Size=UDim2.new(1,-76,1,0); sliderHit.Position=UDim2.fromOffset(66,0)
+        sliderHit.BackgroundTransparency=1; sliderHit.Text=""; sliderHit.AutoButtonColor=false
+        sliderHit.ZIndex=(track.ZIndex or 1)+2; sliderHit.Parent=sr
 
         local function setVal(v)
             v=math.clamp(math.floor(v),0,255)
@@ -437,7 +441,7 @@ local function makeColorRow(page,text,rk,gk,bk)
             local abs=track.AbsolutePosition; local sz=track.AbsoluteSize
             setVal(math.clamp((inp.Position.X-abs.X)/sz.X,0,1)*255)
         end
-        track.InputBegan:Connect(function(inp)
+        sliderHit.InputBegan:Connect(function(inp)
             if inp.UserInputType==Enum.UserInputType.MouseButton1
             or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
         end)
@@ -956,7 +960,7 @@ fab.Position= isMobile
     or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))
 fab.BackgroundColor3=C_DARK; fab.BorderSizePixel=0
 fab.AutoButtonColor=false
-fab.Image="rbxassetid://1779405825649"
+fab.Image="rbxassetid://77130965021335"
 fab.ScaleType=Enum.ScaleType.Fit
 fab.ZIndex=20; fab.Parent=gui
 stroke(fab,C_ACCENT,2)
@@ -1082,27 +1086,37 @@ local function stopFly()
     local char=player.Character; if not char then return end
     local hum=char:FindFirstChildOfClass("Humanoid")
     local root=char:FindFirstChild("HumanoidRootPart")
-    if hum then hum.PlatformStand=false end
+    if hum then
+        hum.PlatformStand=false
+        hum.AutoRotate=true
+    end
     if root then
-        local bp=root:FindFirstChild("SyyFlyBP"); local bg=root:FindFirstChild("SyyFlyBG")
-        if bp then bp:Destroy() end; if bg then bg:Destroy() end
+        local bp=root:FindFirstChild("SyyFlyBP")
+        local bv=root:FindFirstChild("SyyFlyBV")
+        local bg=root:FindFirstChild("SyyFlyBG")
+        if bp then bp:Destroy() end
+        if bv then bv:Destroy() end
+        if bg then bg:Destroy() end
     end
 end
 local function startFly()
-    flyActive=true
     local char=player.Character; if not char then return end
     local hum=char:FindFirstChildOfClass("Humanoid")
     local root=char:FindFirstChild("HumanoidRootPart")
     if not hum or not root then return end
-    hum.PlatformStand=true
-    if not root:FindFirstChild("SyyFlyBP") then
-        local bp=Instance.new("BodyPosition"); bp.Name="SyyFlyBP"
-        bp.MaxForce=Vector3.new(1e5,1e5,1e5); bp.Position=root.Position
-        bp.D=500; bp.P=10000; bp.Parent=root
+    flyActive=true
+    hum.PlatformStand=false
+    hum.AutoRotate=false
+    local oldBp=root:FindFirstChild("SyyFlyBP")
+    if oldBp then oldBp:Destroy() end
+    if not root:FindFirstChild("SyyFlyBV") then
+        local bv=Instance.new("BodyVelocity"); bv.Name="SyyFlyBV"
+        bv.MaxForce=Vector3.new(9e9,9e9,9e9); bv.P=15000
+        bv.Velocity=Vector3.zero; bv.Parent=root
     end
     if not root:FindFirstChild("SyyFlyBG") then
         local bg=Instance.new("BodyGyro"); bg.Name="SyyFlyBG"
-        bg.MaxTorque=Vector3.new(1e5,1e5,1e5); bg.D=100; bg.P=10000
+        bg.MaxTorque=Vector3.new(9e9,9e9,9e9); bg.D=100; bg.P=15000
         bg.CFrame=root.CFrame; bg.Parent=root
     end
 end
@@ -1256,9 +1270,11 @@ RunService.RenderStepped:Connect(function()
     if Config.FlyEnabled and flyActive then
         local char=player.Character
         local root=char and char:FindFirstChild("HumanoidRootPart")
-        local bp=root and root:FindFirstChild("SyyFlyBP")
+        local bv=root and root:FindFirstChild("SyyFlyBV")
         local bg=root and root:FindFirstChild("SyyFlyBG")
-        if bp and bg then
+        if not root or not bv or not bg then
+            flyActive=false
+        elseif bv and bg then
             local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
@@ -1270,9 +1286,20 @@ RunService.RenderStepped:Connect(function()
             if hum2 and hum2.MoveDirection.Magnitude>0.1 then
                 local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
                 if wf.Magnitude>0.01 then mv=mv+wf.Unit end
+                if UserInputService.TouchEnabled then
+                    local lookY=math.clamp(camCF.LookVector.Y,-1,1)
+                    if math.abs(lookY)>0.15 then mv=mv+Vector3.yAxis*lookY end
+                end
             end
-            if mv.Magnitude>0 then bp.Position=bp.Position+mv.Unit*sp*0.016
-            else bp.Position=root.Position end
+            if hum2 then
+                hum2.PlatformStand=false
+                hum2.AutoRotate=false
+                if hum2.Jump then mv=mv+Vector3.yAxis end
+                pcall(function() hum2:ChangeState(Enum.HumanoidStateType.Freefall) end)
+            end
+            local vel=mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
+            bv.Velocity=vel
+            root.AssemblyLinearVelocity=vel
             bg.CFrame=CFrame.new(root.Position,root.Position+camCF.LookVector)
         end
     end
