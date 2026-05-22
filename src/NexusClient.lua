@@ -581,13 +581,11 @@ makeColorRow(pageVis,"Health Low Color","HealthLowColorR","HealthLowColorG","Hea
 makeColorRow(pageVis,"Health Full Color","HealthHighColorR","HealthHighColorG","HealthHighColorB")
 makeColorRow(pageVis,"Health BG Color", "HealthBgColorR","HealthBgColorG","HealthBgColorB")
 makeToggle(pageVis,"Distancia",        "EspDistance")
-makeColorRow(pageVis,"Distance Color", "DistColorR","DistColorG","DistColorB")
 makeToggle(pageVis,"Nombres",          "EspNames")
 makeColorRow(pageVis,"Name Color",     "NameColorR","NameColorG","NameColorB")
 makeSlider(pageVis,"Dist Máx",         "EspMaxDist",50,1000)
 secLabel(pageVis,"Extras Visuales")
 makeToggle(pageVis,"Item en la Mano",  "ItemInHand")
-makeColorRow(pageVis,"Item Color",     "ItemColorR","ItemColorG","ItemColorB")
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 3: EXTRAS
