@@ -419,9 +419,10 @@ local function makeColorRow(page,text,rk,gk,bk)
         sl.BackgroundTransparency=1; sl.TextColor3=C_TEXT; sl.Font=Enum.Font.GothamMedium
         sl.TextSize=TXT_SIZE; sl.TextXAlignment=Enum.TextXAlignment.Left; sl.Parent=sr
 
+        local trackH2 = isMobile and 9 or 6
         local track=Instance.new("Frame")
-        track.Size=UDim2.new(1,-76,0,isMobile and 9 or 6)
-        track.Position=UDim2.new(0,66,0.5,-((isMobile and 9 or 6)/2))
+        track.Size=UDim2.new(1,-76,0,trackH2)
+        track.Position=UDim2.new(0,66,0.5,-(trackH2/2))
         track.BackgroundColor3=Color3.fromRGB(20,35,50); track.BorderSizePixel=0; track.Parent=sr
         local fill=Instance.new("Frame")
         fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
@@ -436,12 +437,19 @@ local function makeColorRow(page,text,rk,gk,bk)
         end
         setVal(Config[key])
 
+        -- Botón invisible encima del track — funciona en móvil sin que ScrollingFrame robe el touch
+        local hitT=Instance.new("TextButton")
+        hitT.Size=UDim2.new(1,-76,1,0); hitT.Position=UDim2.new(0,66,0,0)
+        hitT.BackgroundTransparency=1; hitT.Text=""; hitT.ZIndex=5; hitT.Parent=sr
+
         local sliding=false
         local function slide(inp)
+            -- Usamos la posición del track calculada en tiempo de ejecución
             local abs=track.AbsolutePosition; local sz=track.AbsoluteSize
+            if sz.X<=0 then return end
             setVal(math.clamp((inp.Position.X-abs.X)/sz.X,0,1)*255)
         end
-        track.InputBegan:Connect(function(inp)
+        hitT.InputBegan:Connect(function(inp)
             if inp.UserInputType==Enum.UserInputType.MouseButton1
             or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
         end)
@@ -1196,7 +1204,26 @@ Players.PlayerAdded:Connect(createEsp); Players.PlayerRemoving:Connect(removeEsp
 -- SILENT AIM
 -- ══════════════════════════════════════════════════════════════
 local cachedTargetPos=nil
-local cachedNpcPos=nil  -- NPC silent aim
+local cachedNpcPos=nil       -- NPC silent aim
+local npcSilentVisible=true  -- true=visible, false=detrás de pared (FOV rojo)
+
+-- ── Cache de NPCs: se refresca cada 90 frames (no más GetDescendants cada frame) ──
+local cachedNpcHumanoids={}
+local npcCacheFrame=0
+local function rebuildNpcCache()
+    local tbl={}
+    for _,obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") then
+            local isPlayer=false
+            for _,pl in ipairs(Players:GetPlayers()) do
+                if pl.Character==obj.Parent then isPlayer=true; break end
+            end
+            if not isPlayer then table.insert(tbl,obj) end
+        end
+    end
+    cachedNpcHumanoids=tbl
+end
+rebuildNpcCache()
 local isFiring=false
 UserInputService.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 then isFiring=true
@@ -1353,33 +1380,47 @@ RunService.RenderStepped:Connect(function()
             cachedTargetPos=bestPos
         else cachedTargetPos=nil end
 
-        -- NPC Silent Aim target
+        -- NPC Silent Aim target — usa cache, no GetDescendants cada frame
         if Config.NpcSilentAimEnabled then
+            -- Reconstruir cache de NPCs cada 90 frames
+            npcCacheFrame=npcCacheFrame+1
+            if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
+
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; cachedNpcPos=nil
-            for _,obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("Humanoid") and obj.Health>0 then
-                    local npcRoot=obj.Parent:FindFirstChild("HumanoidRootPart")
-                    if not npcRoot then continue end
-                    -- Asegurarse de que NO es un player
-                    local isPlayer=false
-                    for _,pl in ipairs(Players:GetPlayers()) do
-                        if pl.Character==obj.Parent then isPlayer=true; break end
+            local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
+            local myChar3=player.Character
+
+            for _,hum in ipairs(cachedNpcHumanoids) do
+                if not hum or not hum.Parent then continue end
+                if hum.Health<=0 then continue end
+                local npcRoot=hum.Parent:FindFirstChild("HumanoidRootPart")
+                if not npcRoot then continue end
+                local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
+                if not onS then continue end
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                if d2>Config.FovRadius then continue end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.NpcTargetPart
+                    local part=hum.Parent:FindFirstChild(pn) or npcRoot
+                    -- Visible check para NPC (similar al de jugadores)
+                    local visible=true
+                    if not Config.Manipulation and myChar3 then
+                        local ok,obs=pcall(function()
+                            return camera:GetPartsObscuringTarget({part.Position},{myChar3,hum.Parent})
+                        end)
+                        if ok and #obs>0 then visible=false end
                     end
-                    if isPlayer then continue end
-                    local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
-                    if not onS then continue end
-                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                    if d2>Config.FovRadius then continue end
-                    if d2<bestD then
-                        bestD=d2
-                        local pn=Config.NpcTargetPart
-                        local part=obj.Parent:FindFirstChild(pn) or npcRoot
+                    npcSilentVisible=visible
+                    -- Solo asignar la posición si pasa el visible check (o si Manipulation está on)
+                    if visible or Config.Manipulation then
                         cachedNpcPos=part.Position
+                    else
+                        cachedNpcPos=nil
                     end
                 end
             end
-        else cachedNpcPos=nil end
+        else cachedNpcPos=nil; npcSilentVisible=true end
     end
 
     local vpSize=camera.ViewportSize
@@ -1387,14 +1428,20 @@ RunService.RenderStepped:Connect(function()
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-    -- FOV Circle
-    fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.FovAimEnabled or Config.TriggerBotEnabled)
+    -- FOV Circle — se pone ROJO cuando el objetivo NPC está detrás de una pared
+    fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.FovAimEnabled or Config.TriggerBotEnabled or Config.NpcSilentAimEnabled)
     if fovCircle.Visible then
         fovCircle.Position=center2D; fovCircle.Radius=Config.FovRadius
-        fovCircle.Color=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
+        -- Rojo si NPC detrás de pared, color normal en cualquier otro caso
+        if Config.NpcSilentAimEnabled and not npcSilentVisible then
+            fovCircle.Color=Color3.fromRGB(255,40,40)
+        else
+            fovCircle.Color=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
+        end
     end
 
     -- FovAim: mueve la cámara suave hacia el target más cercano al FOV
+    -- FIJO: ya no sube para arriba, usa lerp de dirección con el eje right estable
     if Config.FovAimEnabled then
         local bestP,bestD2=nil,math.huge
         for _,p in ipairs(Players:GetPlayers()) do
@@ -1409,34 +1456,52 @@ RunService.RenderStepped:Connect(function()
             if d<Config.FovRadius and d<bestD2 then bestD2=d; bestP=root end
         end
         if bestP then
-            local targetCF=CFrame.new(camera.CFrame.Position, bestP.Position)
-            camera.CFrame=camera.CFrame:Lerp(targetCF, Config.FovAimStrength*0.01)
+            local camCF=camera.CFrame
+            local camPos=camCF.Position
+            local currentLook=camCF.LookVector
+            -- Apuntar al torso levantado +1.5 para no apuntar a los pies
+            local targetPos=Vector3.new(bestP.Position.X,bestP.Position.Y+1.5,bestP.Position.Z)
+            local rawDir=targetPos-camPos
+            if rawDir.Magnitude>0.01 then
+                local targetDir=rawDir.Unit
+                local strength=math.clamp(Config.FovAimStrength,1,20)*0.015
+                local newLook=currentLook:Lerp(targetDir,strength).Unit
+                -- Reconstruir CFrame con eje right fijo para evitar roll y desviación vertical
+                local rightV=camCF.RightVector
+                local upV=(rightV:Cross(newLook)*(-1)).Unit
+                if upV.Magnitude>0.01 then
+                    camera.CFrame=CFrame.fromMatrix(camPos,rightV,upV)
+                end
+            end
         end
     end
 
-    -- TriggerBot: simula click cuando el cursor está encima de un enemigo
-    if Config.TriggerBotEnabled and not isFiring then
-        local unitRay=camera:ScreenPointToRay(center2D.X, center2D.Y)
-        local params=RaycastParams.new()
-        params.FilterType=Enum.RaycastFilterType.Exclude
-        if myChar then params.FilterDescendantsInstances={myChar} end
-        local result=Workspace:Raycast(unitRay.Origin, unitRay.Direction*600, params)
-        if result and result.Instance then
-            local hitChar=result.Instance:FindFirstAncestorOfClass("Model")
-            if hitChar then
-                local hum=hitChar:FindFirstChildOfClass("Humanoid")
-                local isEnemy=false
-                for _,p in ipairs(Players:GetPlayers()) do
-                    if p~=player and p.Character==hitChar and not isWhitelisted(p) then isEnemy=true; break end
-                end
-                if hum and hum.Health>0 and isEnemy then
-                    -- Simular disparo activando el tool
-                    local tool=myChar and myChar:FindFirstChildOfClass("Tool")
-                    if tool then
-                        pcall(function() tool:Activate() end)
-                    end
-                end
+    -- TriggerBot: dispara cuando hay un objetivo en el FOV cache (kill check: health > 0)
+    -- FIJO: usa cachedTargetPos en vez de raycast natural + debounce propio
+    if Config.TriggerBotEnabled then
+        local triggerTarget=nil
+        -- Primero intenta con silent aim cache (jugadores)
+        if cachedTargetPos and Config.SilentAimEnabled then
+            triggerTarget=cachedTargetPos
+        else
+            -- Buscar jugador en FOV sin necesitar silent aim
+            local bestD3=math.huge
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p==player or isWhitelisted(p) then continue end
+                local char=p.Character; if not char then continue end
+                local hum=char:FindFirstChildOfClass("Humanoid")
+                local root=char:FindFirstChild("HumanoidRootPart")
+                -- Kill check: solo si el objetivo sigue vivo
+                if not hum or hum.Health<=0 or not root then continue end
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                if not onS then continue end
+                local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
+                if d<Config.FovRadius and d<bestD3 then bestD3=d; triggerTarget=root.Position end
             end
+        end
+        if triggerTarget and isFiring then
+            local tool=myChar and myChar:FindFirstChildOfClass("Tool")
+            if tool then pcall(function() tool:Activate() end) end
         end
     end
 
