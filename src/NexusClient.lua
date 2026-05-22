@@ -960,7 +960,7 @@ fab.Position= isMobile
     or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))
 fab.BackgroundColor3=C_DARK; fab.BorderSizePixel=0
 fab.AutoButtonColor=false
-fab.Image="rbxassetid://77130965021335"
+fab.Image="rbxassetid://1779405825649"
 fab.ScaleType=Enum.ScaleType.Fit
 fab.ZIndex=20; fab.Parent=gui
 stroke(fab,C_ACCENT,2)
@@ -1270,11 +1270,9 @@ RunService.RenderStepped:Connect(function()
     if Config.FlyEnabled and flyActive then
         local char=player.Character
         local root=char and char:FindFirstChild("HumanoidRootPart")
-        local bv=root and root:FindFirstChild("SyyFlyBV")
+        local bp=root and root:FindFirstChild("SyyFlyBP")
         local bg=root and root:FindFirstChild("SyyFlyBG")
-        if not root or not bv or not bg then
-            flyActive=false
-        elseif bv and bg then
+        if bp and bg then
             local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
@@ -1286,20 +1284,9 @@ RunService.RenderStepped:Connect(function()
             if hum2 and hum2.MoveDirection.Magnitude>0.1 then
                 local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
                 if wf.Magnitude>0.01 then mv=mv+wf.Unit end
-                if UserInputService.TouchEnabled then
-                    local lookY=math.clamp(camCF.LookVector.Y,-1,1)
-                    if math.abs(lookY)>0.15 then mv=mv+Vector3.yAxis*lookY end
-                end
             end
-            if hum2 then
-                hum2.PlatformStand=false
-                hum2.AutoRotate=false
-                if hum2.Jump then mv=mv+Vector3.yAxis end
-                pcall(function() hum2:ChangeState(Enum.HumanoidStateType.Freefall) end)
-            end
-            local vel=mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
-            bv.Velocity=vel
-            root.AssemblyLinearVelocity=vel
+            if mv.Magnitude>0 then bp.Position=bp.Position+mv.Unit*sp*0.016
+            else bp.Position=root.Position end
             bg.CFrame=CFrame.new(root.Position,root.Position+camCF.LookVector)
         end
     end
