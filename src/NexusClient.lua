@@ -31,6 +31,11 @@ local DefaultConfig = {
     BoxColorR=0,  BoxColorG=220, BoxColorB=255,
     SkelColorR=0, SkelColorG=220,SkelColorB=255,
     NameColorR=255,NameColorG=255,NameColorB=255,
+    DistColorR=70,DistColorG=160,DistColorB=210,
+    ItemColorR=255,ItemColorG=215,ItemColorB=0,
+    HealthLowColorR=255,HealthLowColorG=80,HealthLowColorB=80,
+    HealthHighColorR=80,HealthHighColorG=255,HealthHighColorB=80,
+    HealthBgColorR=20,HealthBgColorG=20,HealthBgColorB=20,
     FlyEnabled=false, FlySpeed=50, RageMode=false, InfStamina=false,
     Whitelist={},
 }
@@ -359,34 +364,118 @@ local function makeSlider(page,text,key,mn,mx,cb)
 end
 
 local function makeColorRow(page,text,rk,gk,bk)
+    local open=false
+    local container=Instance.new("Frame")
+    container.Size=UDim2.new(1,0,0,ROW_H); container.BackgroundTransparency=1
+    container.BorderSizePixel=0; container.ClipsDescendants=true; container.Parent=page
+    local lay2=Instance.new("UIListLayout"); lay2.SortOrder=Enum.SortOrder.LayoutOrder
+    lay2.Padding=UDim.new(0,1); lay2.Parent=container
+
     local row=Instance.new("Frame")
     row.Size=UDim2.new(1,0,0,ROW_H); row.BackgroundColor3=C_ROW
-    row.BorderSizePixel=0; row.Parent=page
+    row.BorderSizePixel=0; row.Parent=container
     stroke(row,Color3.fromRGB(0,60,90),1)
 
     local previewSz = isMobile and 28 or 22
     local lbl=Instance.new("TextLabel")
-    lbl.Size=UDim2.new(1,-(previewSz+16),1,0); lbl.Position=UDim2.fromOffset(8,0)
+    lbl.Size=UDim2.new(1,-(previewSz+42),1,0); lbl.Position=UDim2.fromOffset(8,0)
     lbl.BackgroundTransparency=1; lbl.Text=text
     lbl.TextColor3=C_TEXT; lbl.Font=Enum.Font.GothamMedium
     lbl.TextSize=TXT_SIZE; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=row
 
+    local arr=Instance.new("TextLabel")
+    arr.Size=UDim2.fromOffset(16,ROW_H); arr.Position=UDim2.new(1,-(previewSz+26),0,0)
+    arr.BackgroundTransparency=1; arr.Text="▾"; arr.TextColor3=C_ACCENT
+    arr.Font=Enum.Font.GothamBold; arr.TextSize=TXT_SIZE; arr.Parent=row
+
     local prev=Instance.new("TextButton")
     prev.Size=UDim2.fromOffset(previewSz,previewSz)
     prev.Position=UDim2.new(1,-(previewSz+6),0.5,-(previewSz/2))
-    prev.BorderSizePixel=0; prev.BackgroundColor3=Color3.fromRGB(Config[rk],Config[gk],Config[bk])
-    prev.Text=""; prev.AutoButtonColor=false; prev.Parent=row
+    prev.BorderSizePixel=0; prev.Text=""; prev.AutoButtonColor=false; prev.Parent=row
     stroke(prev,C_ACCENT,1)
+
+    local function color()
+        return Color3.fromRGB(Config[rk],Config[gk],Config[bk])
+    end
+    local function refreshPreview()
+        TweenService:Create(prev,TWEENI,{BackgroundColor3=color()}):Play()
+    end
+    prev.BackgroundColor3=color()
+
+    local rgbSetters={}
+    local function makeRgbSlider(label,key)
+        local sr=Instance.new("Frame")
+        sr.Size=UDim2.new(1,0,0,ROW_H); sr.BackgroundColor3=C_ROW
+        sr.BorderSizePixel=0; sr.Parent=container
+        stroke(sr,Color3.fromRGB(0,50,80),1)
+
+        local sl=Instance.new("TextLabel")
+        sl.Size=UDim2.new(0,56,1,0); sl.Position=UDim2.fromOffset(8,0)
+        sl.BackgroundTransparency=1; sl.TextColor3=C_TEXT; sl.Font=Enum.Font.GothamMedium
+        sl.TextSize=TXT_SIZE; sl.TextXAlignment=Enum.TextXAlignment.Left; sl.Parent=sr
+
+        local track=Instance.new("Frame")
+        track.Size=UDim2.new(1,-76,0,isMobile and 9 or 6)
+        track.Position=UDim2.new(0,66,0.5,-((isMobile and 9 or 6)/2))
+        track.BackgroundColor3=Color3.fromRGB(20,35,50); track.BorderSizePixel=0; track.Parent=sr
+        local fill=Instance.new("Frame")
+        fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
+        fill.BorderSizePixel=0; fill.Parent=track
+
+        local function setVal(v)
+            v=math.clamp(math.floor(v),0,255)
+            Config[key]=v
+            sl.Text=label..": "..v
+            fill.Size=UDim2.new(v/255,0,1,0)
+            refreshPreview()
+        end
+        rgbSetters[key]=setVal
+        setVal(Config[key])
+
+        local sliding=false
+        local function slide(inp)
+            local abs=track.AbsolutePosition; local sz=track.AbsoluteSize
+            setVal(math.clamp((inp.Position.X-abs.X)/sz.X,0,1)*255)
+        end
+        track.InputBegan:Connect(function(inp)
+            if inp.UserInputType==Enum.UserInputType.MouseButton1
+            or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
+        end)
+        UserInputService.InputChanged:Connect(function(inp)
+            if sliding and (inp.UserInputType==Enum.UserInputType.MouseMovement
+            or inp.UserInputType==Enum.UserInputType.Touch) then slide(inp) end
+        end)
+        UserInputService.InputEnded:Connect(function(inp)
+            if inp.UserInputType==Enum.UserInputType.MouseButton1
+            or inp.UserInputType==Enum.UserInputType.Touch then
+                if sliding then sliding=false; saveConfig() end
+            end
+        end)
+    end
+
+    makeRgbSlider("R",rk)
+    makeRgbSlider("G",gk)
+    makeRgbSlider("B",bk)
+
+    local function toggleOpen()
+        open=not open
+        arr.Text=open and "▴" or "▾"
+        container.Size=UDim2.new(1,0,0,open and (ROW_H*4+3) or ROW_H)
+    end
+
+    local hitbox=Instance.new("TextButton")
+    hitbox.Size=UDim2.new(1,-(previewSz+32),1,0); hitbox.BackgroundTransparency=1
+    hitbox.Text=""; hitbox.Parent=row
+    hitbox.MouseButton1Click:Connect(toggleOpen)
 
     local presets={{0,190,255},{255,80,80},{80,255,80},{255,215,0},{255,140,0},{200,80,255},{255,255,255},{0,255,200}}
     local ci=1
     prev.MouseButton1Click:Connect(function()
         ci=ci%#presets+1
-        Config[rk]=presets[ci][1]; Config[gk]=presets[ci][2]; Config[bk]=presets[ci][3]
-        TweenService:Create(prev,TWEENI,{BackgroundColor3=Color3.fromRGB(presets[ci][1],presets[ci][2],presets[ci][3])}):Play()
+        rgbSetters[rk](presets[ci][1]); rgbSetters[gk](presets[ci][2]); rgbSetters[bk](presets[ci][3])
         saveConfig()
     end)
-    return row
+    return container
 end
 
 local function makeDropdown(page,text,key,options)
@@ -464,7 +553,7 @@ end
 local pageAim=tabPages[1]
 secLabel(pageAim,"Silent Aim")
 makeToggle(pageAim,"Silent Aim",       "SilentAimEnabled")
-makeToggle(pageAim,"VisibleCheck",     "VisibleCheck")
+makeToggle(pageAim,"FOV Check",        "VisibleCheck")
 makeToggle(pageAim,"Manipulation",     "Manipulation")
 makeSlider(pageAim,"HitChance %",      "HitChance",1,100)
 secLabel(pageAim,"FOV")
@@ -488,12 +577,17 @@ makeColorRow(pageVis,"Box Color",      "BoxColorR","BoxColorG","BoxColorB")
 makeToggle(pageVis,"Skeleton",         "EspSkeleton")
 makeColorRow(pageVis,"Skel Color",     "SkelColorR","SkelColorG","SkelColorB")
 makeToggle(pageVis,"Health Bar",       "EspHealthBar")
+makeColorRow(pageVis,"Health Low Color","HealthLowColorR","HealthLowColorG","HealthLowColorB")
+makeColorRow(pageVis,"Health Full Color","HealthHighColorR","HealthHighColorG","HealthHighColorB")
+makeColorRow(pageVis,"Health BG Color", "HealthBgColorR","HealthBgColorG","HealthBgColorB")
 makeToggle(pageVis,"Distancia",        "EspDistance")
+makeColorRow(pageVis,"Distance Color", "DistColorR","DistColorG","DistColorB")
 makeToggle(pageVis,"Nombres",          "EspNames")
 makeColorRow(pageVis,"Name Color",     "NameColorR","NameColorG","NameColorB")
 makeSlider(pageVis,"Dist Máx",         "EspMaxDist",50,1000)
 secLabel(pageVis,"Extras Visuales")
 makeToggle(pageVis,"Item en la Mano",  "ItemInHand")
+makeColorRow(pageVis,"Item Color",     "ItemColorR","ItemColorG","ItemColorB")
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 3: EXTRAS
@@ -1065,6 +1159,7 @@ Players.PlayerAdded:Connect(createEsp); Players.PlayerRemoving:Connect(removeEsp
 -- SILENT AIM
 -- ══════════════════════════════════════════════════════════════
 local cachedTargetPos=nil
+local cachedTargetChar=nil
 local isFiring=false
 UserInputService.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 then isFiring=true
@@ -1088,6 +1183,35 @@ local function watchChar(char)
 end
 watchChar(player.Character); player.CharacterAdded:Connect(watchChar)
 
+local function isInsideAimFov(pos)
+    local sp,onScreen=camera:WorldToViewportPoint(pos)
+    if not onScreen then return false end
+    local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+    return (Vector2.new(sp.X,sp.Y)-center).Magnitude<=Config.FovRadius
+end
+
+local function hasLineOfSight(char,pos)
+    if Config.Manipulation then return true end
+    local lc=player.Character
+    if not lc or not char then return false end
+    local ok,obs=pcall(function()
+        return camera:GetPartsObscuringTarget({pos},{lc,char})
+    end)
+    if ok then return #obs==0 end
+
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={lc,char}
+    return Workspace:Raycast(camera.CFrame.Position,pos-camera.CFrame.Position,params)==nil
+end
+
+local function canUseSilentTarget(char,pos)
+    if not char or not pos then return false end
+    if Config.VisibleCheck and not isInsideAimFov(pos) then return false end
+    if not hasLineOfSight(char,pos) then return false end
+    return true
+end
+
 local wallbreakParams=RaycastParams.new()
 wallbreakParams.FilterType=Enum.RaycastFilterType.Include
 wallbreakParams.FilterDescendantsInstances={}
@@ -1099,6 +1223,7 @@ pcall(function()
         if not Config.SilentAimEnabled then return oldNC(...) end
         if checkcaller() then return oldNC(...) end
         if not cachedTargetPos then return oldNC(...) end
+        if not canUseSilentTarget(cachedTargetChar,cachedTargetPos) then return oldNC(...) end
         if math.random(100)>Config.HitChance then return oldNC(...) end
         local args={...}
         if args[1]~=Workspace then return oldNC(...) end
@@ -1160,34 +1285,31 @@ RunService.RenderStepped:Connect(function()
 
         if Config.SilentAimEnabled then
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; local bestPos=nil
+            local bestD=math.huge; local bestPos=nil; local bestChar=nil
             for _,p in ipairs(Players:GetPlayers()) do
                 if p==player or isWhitelisted(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
                 local root=char:FindFirstChild("HumanoidRootPart")
                 if not hum or hum.Health<=0 or not root then continue end
-                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                local pn=Config.TargetPart
+                if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso") end
+                local hp2=char:FindFirstChild(pn) or root
+                local aimPos=hp2.Position
+                local sp2,onS=camera:WorldToViewportPoint(aimPos)
                 if not onS then continue end
                 local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if d2>Config.FovRadius then continue end
-                if Config.VisibleCheck then
-                    local lc=player.Character
-                    if lc then
-                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                        if ok and #obs>0 then continue end
-                    end
-                end
+                if Config.VisibleCheck and d2>Config.FovRadius then continue end
+                if not hasLineOfSight(char,aimPos) then continue end
                 if d2<bestD then
                     bestD=d2
-                    local pn=Config.TargetPart
-                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso") end
-                    local hp2=char:FindFirstChild(pn) or root
-                    bestPos=hp2.Position
+                    bestPos=aimPos
+                    bestChar=char
                 end
             end
             cachedTargetPos=bestPos
-        else cachedTargetPos=nil end
+            cachedTargetChar=bestChar
+        else cachedTargetPos=nil; cachedTargetChar=nil end
     end
 
     local vpSize=camera.ViewportSize
@@ -1205,6 +1327,11 @@ RunService.RenderStepped:Connect(function()
     local boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB)
     local skelCol=Color3.fromRGB(Config.SkelColorR,Config.SkelColorG,Config.SkelColorB)
     local namCol=Color3.fromRGB(Config.NameColorR,Config.NameColorG,Config.NameColorB)
+    local distCol=Color3.fromRGB(Config.DistColorR,Config.DistColorG,Config.DistColorB)
+    local itemCol=Color3.fromRGB(Config.ItemColorR,Config.ItemColorG,Config.ItemColorB)
+    local healthLowCol=Color3.fromRGB(Config.HealthLowColorR,Config.HealthLowColorG,Config.HealthLowColorB)
+    local healthHighCol=Color3.fromRGB(Config.HealthHighColorR,Config.HealthHighColorG,Config.HealthHighColorB)
+    local healthBgCol=Color3.fromRGB(Config.HealthBgColorR,Config.HealthBgColorG,Config.HealthBgColorB)
     local snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB)
 
     local snapTargetP=nil
@@ -1252,16 +1379,16 @@ RunService.RenderStepped:Connect(function()
         if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
         if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
-        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=C_DIM
+        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=distCol
         if Config.EspDistance then obj.distTag.Text=dist3D.."m"; obj.distTag.Position=Vector2.new(sp.X-boxW/2,botSP.Y+2) end
         local hp=hum.Health/math.max(hum.MaxHealth,1)
         obj.healthBg.Visible=Config.EspHealthBar; obj.healthBar.Visible=Config.EspHealthBar
         if Config.EspHealthBar then
             local bx=sp.X-boxW/2-7
-            obj.healthBg.Position=Vector2.new(bx,topSP.Y); obj.healthBg.Size=Vector2.new(4,boxH); obj.healthBg.Color=Color3.fromRGB(20,20,20)
+            obj.healthBg.Position=Vector2.new(bx,topSP.Y); obj.healthBg.Size=Vector2.new(4,boxH); obj.healthBg.Color=healthBgCol
             local barH=boxH*hp
             obj.healthBar.Position=Vector2.new(bx,topSP.Y+boxH-barH); obj.healthBar.Size=Vector2.new(4,barH)
-            obj.healthBar.Color=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(255*hp),0)
+            obj.healthBar.Color=healthLowCol:Lerp(healthHighCol,hp)
         end
         for si,pair in ipairs(SKEL) do
             local pA=char:FindFirstChild(pair[1]); local pB=char:FindFirstChild(pair[2])
@@ -1275,6 +1402,7 @@ RunService.RenderStepped:Connect(function()
         end
         local itDraw=itemDrawings[p]
         if itDraw then
+            itDraw.Color=itemCol
             local iname=Config.ItemInHand and getItemInHand(char) or nil
             if iname then
                 itDraw.Text="["..iname.."]"; itDraw.Position=Vector2.new(sp.X,topSP.Y-26); itDraw.Visible=true
