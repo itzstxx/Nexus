@@ -518,6 +518,25 @@ secLabel(pageExt,"Stamina")
 local staminaConns = {}
 local staminaLoop  = false   -- controla el loop rápido
 
+local function keepStaminaFull(stVal)
+    if not stVal then return end
+    pcall(function()
+        if stVal:IsA("DoubleConstrainedValue") then
+            stVal.Value = stVal.MaxValue
+        else
+            stVal.Value = 100
+        end
+    end)
+end
+
+local function watchStaminaValue(stVal)
+    if not stVal then return end
+    keepStaminaFull(stVal)
+    table.insert(staminaConns, stVal.Changed:Connect(function()
+        keepStaminaFull(stVal)
+    end))
+end
+
 local function disconnectStamina()
     staminaLoop = false
     for _, c in ipairs(staminaConns) do pcall(function() c:Disconnect() end) end
@@ -541,7 +560,7 @@ local function hookStamina(char)
                 -- PlaceId 455366377 — tiene el objeto "Stamina" directo en el char
                 if game.PlaceId == 455366377 then
                     local st = c2:FindFirstChild("Stamina")
-                    if st then st.Value = 100 end
+                    keepStaminaFull(st)
                     return
                 end
 
@@ -574,13 +593,12 @@ local function hookStamina(char)
     -- ── HOOK .Changed (respaldo instantáneo) ────────────────
     if game.PlaceId == 455366377 then
         local stVal = char:WaitForChild("Stamina", 4)
-        if stVal then
-            stVal.Value = 100
-            local c = stVal.Changed:Connect(function()
-                stVal.Value = 100
-            end)
-            table.insert(staminaConns, c)
-        end
+        watchStaminaValue(stVal)
+        table.insert(staminaConns, char.ChildAdded:Connect(function(child)
+            if child.Name == "Stamina" then
+                watchStaminaValue(child)
+            end
+        end))
     end
 end
 
