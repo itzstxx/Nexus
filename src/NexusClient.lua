@@ -139,7 +139,7 @@ local logoImg=Instance.new("ImageLabel")
 logoImg.Size=UDim2.fromOffset(logoSize,logoSize)
 logoImg.Position=UDim2.new(0,6,0.5,-(logoSize/2))
 logoImg.BackgroundTransparency=1
-logoImg.Image="rbxassetid://77130965021335"
+logoImg.Image="rbxassetid://1779405825649"
 logoImg.ScaleType=Enum.ScaleType.Fit
 logoImg.ImageTransparency=0
 logoImg.Parent=header
@@ -1159,7 +1159,6 @@ Players.PlayerAdded:Connect(createEsp); Players.PlayerRemoving:Connect(removeEsp
 -- SILENT AIM
 -- ══════════════════════════════════════════════════════════════
 local cachedTargetPos=nil
-local cachedTargetChar=nil
 local isFiring=false
 UserInputService.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 then isFiring=true
@@ -1183,35 +1182,6 @@ local function watchChar(char)
 end
 watchChar(player.Character); player.CharacterAdded:Connect(watchChar)
 
-local function isInsideAimFov(pos)
-    local sp,onScreen=camera:WorldToViewportPoint(pos)
-    if not onScreen then return false end
-    local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-    return (Vector2.new(sp.X,sp.Y)-center).Magnitude<=Config.FovRadius
-end
-
-local function hasLineOfSight(char,pos)
-    if Config.Manipulation then return true end
-    local lc=player.Character
-    if not lc or not char then return false end
-    local ok,obs=pcall(function()
-        return camera:GetPartsObscuringTarget({pos},{lc,char})
-    end)
-    if ok then return #obs==0 end
-
-    local params=RaycastParams.new()
-    params.FilterType=Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances={lc,char}
-    return Workspace:Raycast(camera.CFrame.Position,pos-camera.CFrame.Position,params)==nil
-end
-
-local function canUseSilentTarget(char,pos)
-    if not char or not pos then return false end
-    if Config.VisibleCheck and not isInsideAimFov(pos) then return false end
-    if not hasLineOfSight(char,pos) then return false end
-    return true
-end
-
 local wallbreakParams=RaycastParams.new()
 wallbreakParams.FilterType=Enum.RaycastFilterType.Include
 wallbreakParams.FilterDescendantsInstances={}
@@ -1223,7 +1193,6 @@ pcall(function()
         if not Config.SilentAimEnabled then return oldNC(...) end
         if checkcaller() then return oldNC(...) end
         if not cachedTargetPos then return oldNC(...) end
-        if not canUseSilentTarget(cachedTargetChar,cachedTargetPos) then return oldNC(...) end
         if math.random(100)>Config.HitChance then return oldNC(...) end
         local args={...}
         if args[1]~=Workspace then return oldNC(...) end
@@ -1285,31 +1254,34 @@ RunService.RenderStepped:Connect(function()
 
         if Config.SilentAimEnabled then
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; local bestPos=nil; local bestChar=nil
+            local bestD=math.huge; local bestPos=nil
             for _,p in ipairs(Players:GetPlayers()) do
                 if p==player or isWhitelisted(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
                 local root=char:FindFirstChild("HumanoidRootPart")
                 if not hum or hum.Health<=0 or not root then continue end
-                local pn=Config.TargetPart
-                if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso") end
-                local hp2=char:FindFirstChild(pn) or root
-                local aimPos=hp2.Position
-                local sp2,onS=camera:WorldToViewportPoint(aimPos)
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
                 if not onS then continue end
                 local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if Config.VisibleCheck and d2>Config.FovRadius then continue end
-                if not hasLineOfSight(char,aimPos) then continue end
+                if d2>Config.FovRadius then continue end
+                if Config.VisibleCheck then
+                    local lc=player.Character
+                    if lc then
+                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                        if ok and #obs>0 then continue end
+                    end
+                end
                 if d2<bestD then
                     bestD=d2
-                    bestPos=aimPos
-                    bestChar=char
+                    local pn=Config.TargetPart
+                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso") end
+                    local hp2=char:FindFirstChild(pn) or root
+                    bestPos=hp2.Position
                 end
             end
             cachedTargetPos=bestPos
-            cachedTargetChar=bestChar
-        else cachedTargetPos=nil; cachedTargetChar=nil end
+        else cachedTargetPos=nil end
     end
 
     local vpSize=camera.ViewportSize
@@ -1379,16 +1351,16 @@ RunService.RenderStepped:Connect(function()
         if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
         if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
-        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=distCol
+        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=C_DIM
         if Config.EspDistance then obj.distTag.Text=dist3D.."m"; obj.distTag.Position=Vector2.new(sp.X-boxW/2,botSP.Y+2) end
         local hp=hum.Health/math.max(hum.MaxHealth,1)
         obj.healthBg.Visible=Config.EspHealthBar; obj.healthBar.Visible=Config.EspHealthBar
         if Config.EspHealthBar then
             local bx=sp.X-boxW/2-7
-            obj.healthBg.Position=Vector2.new(bx,topSP.Y); obj.healthBg.Size=Vector2.new(4,boxH); obj.healthBg.Color=healthBgCol
+            obj.healthBg.Position=Vector2.new(bx,topSP.Y); obj.healthBg.Size=Vector2.new(4,boxH); obj.healthBg.Color=Color3.fromRGB(20,20,20)
             local barH=boxH*hp
             obj.healthBar.Position=Vector2.new(bx,topSP.Y+boxH-barH); obj.healthBar.Size=Vector2.new(4,barH)
-            obj.healthBar.Color=healthLowCol:Lerp(healthHighCol,hp)
+            obj.healthBar.Color=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(255*hp),0)
         end
         for si,pair in ipairs(SKEL) do
             local pA=char:FindFirstChild(pair[1]); local pB=char:FindFirstChild(pair[2])
@@ -1402,7 +1374,6 @@ RunService.RenderStepped:Connect(function()
         end
         local itDraw=itemDrawings[p]
         if itDraw then
-            itDraw.Color=itemCol
             local iname=Config.ItemInHand and getItemInHand(char) or nil
             if iname then
                 itDraw.Text="["..iname.."]"; itDraw.Position=Vector2.new(sp.X,topSP.Y-26); itDraw.Visible=true
@@ -1415,4 +1386,4 @@ RunService.RenderStepped:Connect(function()
     if not snapTargetP then snapLineDraw.Visible=false end
 end)
 
-print("[SYY  "..player.Name)
+print("[SYY v5.1] Loaded — "..player.Name)
