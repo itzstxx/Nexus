@@ -1299,11 +1299,6 @@ RunService.RenderStepped:Connect(function()
     local boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB)
     local skelCol=Color3.fromRGB(Config.SkelColorR,Config.SkelColorG,Config.SkelColorB)
     local namCol=Color3.fromRGB(Config.NameColorR,Config.NameColorG,Config.NameColorB)
-    local distCol=Color3.fromRGB(Config.DistColorR,Config.DistColorG,Config.DistColorB)
-    local itemCol=Color3.fromRGB(Config.ItemColorR,Config.ItemColorG,Config.ItemColorB)
-    local healthLowCol=Color3.fromRGB(Config.HealthLowColorR,Config.HealthLowColorG,Config.HealthLowColorB)
-    local healthHighCol=Color3.fromRGB(Config.HealthHighColorR,Config.HealthHighColorG,Config.HealthHighColorB)
-    local healthBgCol=Color3.fromRGB(Config.HealthBgColorR,Config.HealthBgColorG,Config.HealthBgColorB)
     local snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB)
 
     local snapTargetP=nil
