@@ -516,36 +516,153 @@ makeSlider(pageExt,"Velocidad Fly","FlySpeed",10,200)
 secLabel(pageExt,"Stamina")
 
 local staminaConns = {}
+local staminaWatched = {}
+local staminaKeys = {"stamina","sprint","energy","endur","breath"}
 local staminaLoop  = false   -- controla el loop rápido
 
+local function isStaminaName(name)
+    name = tostring(name or ""):lower()
+    for _, key in ipairs(staminaKeys) do
+        if name:find(key, 1, true) then return true end
+    end
+    return false
+end
+
+local function hasStaminaContext(obj)
+    local cur = obj
+    for _ = 1, 4 do
+        if not cur or typeof(cur) ~= "Instance" then break end
+        if isStaminaName(cur.Name) then return true end
+        cur = cur.Parent
+    end
+    return false
+end
+
+local function isStaminaValue(obj)
+    return obj and typeof(obj) == "Instance"
+        and (obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("DoubleConstrainedValue"))
+        and hasStaminaContext(obj)
+end
+
+local function staminaMax(stVal)
+    if stVal:IsA("DoubleConstrainedValue") then
+        return stVal.MaxValue
+    end
+    return stVal:GetAttribute("MaxStamina")
+        or stVal:GetAttribute("StaminaMax")
+        or stVal:GetAttribute("MaxSprint")
+        or stVal:GetAttribute("SprintMax")
+        or stVal:GetAttribute("MaxEnergy")
+        or stVal:GetAttribute("EnergyMax")
+        or stVal:GetAttribute("Max")
+        or 100
+end
+
 local function keepStaminaFull(stVal)
-    if not stVal then return end
+    if not isStaminaValue(stVal) then return end
     pcall(function()
-        if stVal:IsA("DoubleConstrainedValue") then
-            stVal.Value = stVal.MaxValue
-        else
-            stVal.Value = 100
-        end
+        stVal.Value = staminaMax(stVal)
     end)
 end
 
 local function watchStaminaValue(stVal)
-    if not stVal then return end
+    if not isStaminaValue(stVal) or staminaWatched[stVal] then return end
+    staminaWatched[stVal] = true
     keepStaminaFull(stVal)
     table.insert(staminaConns, stVal.Changed:Connect(function()
         keepStaminaFull(stVal)
     end))
 end
 
+local function keepStaminaAttributes(obj)
+    if not obj or typeof(obj) ~= "Instance" then return end
+    pcall(function()
+        for attr, val in pairs(obj:GetAttributes()) do
+            local attrLower = tostring(attr):lower()
+            if type(val) == "number" and (isStaminaName(attr) or (hasStaminaContext(obj) and attrLower == "value")) and not attrLower:find("max", 1, true) then
+                local maxVal = obj:GetAttribute("Max"..attr)
+                    or obj:GetAttribute(attr.."Max")
+                    or obj:GetAttribute("MaxStamina")
+                    or obj:GetAttribute("StaminaMax")
+                    or 100
+                obj:SetAttribute(attr, maxVal)
+            end
+        end
+    end)
+end
+
+local function watchStaminaAttributes(obj)
+    if not obj or typeof(obj) ~= "Instance" then return end
+    keepStaminaAttributes(obj)
+    pcall(function()
+        for attr, val in pairs(obj:GetAttributes()) do
+            local attrLower = tostring(attr):lower()
+            if type(val) == "number" and (isStaminaName(attr) or (hasStaminaContext(obj) and attrLower == "value")) and not attrLower:find("max", 1, true) then
+                table.insert(staminaConns, obj:GetAttributeChangedSignal(attr):Connect(function()
+                    keepStaminaAttributes(obj)
+                end))
+            end
+        end
+    end)
+end
+
+local function scanStamina(container)
+    if not container then return end
+    watchStaminaValue(container)
+    watchStaminaAttributes(container)
+    pcall(function()
+        for _, desc in ipairs(container:GetDescendants()) do
+            watchStaminaValue(desc)
+            if desc:IsA("Humanoid") or isStaminaName(desc.Name) then
+                watchStaminaAttributes(desc)
+            end
+        end
+    end)
+end
+
+local function watchStaminaContainer(container)
+    if not container then return end
+    scanStamina(container)
+    table.insert(staminaConns, container.DescendantAdded:Connect(function(desc)
+        watchStaminaValue(desc)
+        if desc:IsA("Humanoid") or isStaminaName(desc.Name) then
+            watchStaminaAttributes(desc)
+        end
+    end))
+end
+
+local staminaMetaHooked = false
+local function installStaminaMetaHook()
+    if staminaMetaHooked then return end
+    staminaMetaHooked = true
+    pcall(function()
+        if not hookmetamethod then return end
+        local oldNewIndex
+        oldNewIndex = hookmetamethod(game, "__newindex", function(self, key, value)
+            if Config.InfStamina and key == "Value" and type(value) == "number" and isStaminaValue(self) then
+                local maxVal = staminaMax(self)
+                if value < maxVal then
+                    return oldNewIndex(self, key, maxVal)
+                end
+            end
+            return oldNewIndex(self, key, value)
+        end)
+    end)
+end
+
 local function disconnectStamina()
     staminaLoop = false
     for _, c in ipairs(staminaConns) do pcall(function() c:Disconnect() end) end
     staminaConns = {}
+    staminaWatched = {}
 end
 
 local function hookStamina(char)
     if not char then return end
+    installStaminaMetaHook()
     staminaLoop = true
+    watchStaminaContainer(char)
+    watchStaminaContainer(player)
 
     -- ── LOOP RÁPIDO (0.01s) ─────────────────────────────────
     -- Esto cubre el caso donde el juego baja la stamina mientras corres.
@@ -559,32 +676,19 @@ local function hookStamina(char)
 
                 -- PlaceId 455366377 — tiene el objeto "Stamina" directo en el char
                 if game.PlaceId == 455366377 then
-                    local st = c2:FindFirstChild("Stamina")
-                    keepStaminaFull(st)
-                    return
+                    watchStaminaValue(c2:FindFirstChild("Stamina", true))
                 end
 
                 -- Genérico — busca cualquier valor de stamina/sprint/energy
-                for _, v in ipairs(c2:GetDescendants()) do
-                    if v:IsA("NumberValue") or v:IsA("IntValue") or v:IsA("DoubleConstrainedValue") then
-                        local nm = v.Name:lower()
-                        if nm:find("stamina") or nm:find("sprint") or nm:find("energy")
-                        or nm:find("endur") or nm:find("breath") then
-                            local maxV = v:IsA("DoubleConstrainedValue") and v.MaxValue or 100
-                            v.Value = maxV
-                        end
-                    end
+                for stVal in pairs(staminaWatched) do
+                    keepStaminaFull(stVal)
                 end
                 -- Atributos Humanoid
                 local hum = c2:FindFirstChildOfClass("Humanoid")
                 if hum then
-                    for _, attr in ipairs({"Stamina","Sprint","Energy","Endurance","Breath"}) do
-                        if hum:GetAttribute(attr) ~= nil then
-                            local mx = hum:GetAttribute("Max"..attr) or hum:GetAttribute(attr.."Max") or 100
-                            hum:SetAttribute(attr, mx)
-                        end
-                    end
+                    keepStaminaAttributes(hum)
                 end
+                keepStaminaAttributes(c2)
             end)
             task.wait(0.01)
         end
@@ -616,6 +720,12 @@ player.CharacterAdded:Connect(function(char)
     disconnectStamina()
     task.wait(0.5)
     hookStamina(char)
+end)
+
+task.defer(function()
+    if Config.InfStamina then
+        hookStamina(player.Character or player.CharacterAdded:Wait())
+    end
 end)
 
 -- ══════════════════════════════════════════════════════════════
@@ -1141,7 +1251,7 @@ RunService.RenderStepped:Connect(function()
         obj.box.Visible=Config.EspBox; obj.box.Color=boxCol
         if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
-        if Config.EspNames then obj.nameTag.Text=p.DisplayName; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
+        if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
         obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=C_DIM
         if Config.EspDistance then obj.distTag.Text=dist3D.."m"; obj.distTag.Position=Vector2.new(sp.X-boxW/2,botSP.Y+2) end
         local hp=hum.Health/math.max(hum.MaxHealth,1)
