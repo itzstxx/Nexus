@@ -36,7 +36,7 @@ local DefaultConfig = {
     HealthLowColorR=255,HealthLowColorG=80,HealthLowColorB=80,
     HealthHighColorR=80,HealthHighColorG=255,HealthHighColorB=80,
     HealthBgColorR=20,HealthBgColorG=20,HealthBgColorB=20,
-    RageMode=false, InfStamina=false,
+    FlyEnabled=false, FlySpeed=50, RageMode=false, InfStamina=false,
     Whitelist={},
 }
 local Config = {}
@@ -51,32 +51,6 @@ local function loadConfig()
 end
 local function saveConfig() pcall(function() writefile(CONFIG_FILE,HttpService:JSONEncode(Config)) end) end
 loadConfig()
-
-local function clearFlyArtifacts(char)
-    char = char or player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.PlatformStand = false
-        hum.AutoRotate = true
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
-    end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        for _, name in ipairs({"SyyFlyBP","SyyFlyBV","SyyFlyBG"}) do
-            local obj = root:FindFirstChild(name)
-            if obj then obj:Destroy() end
-        end
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
-    end
-end
-
-clearFlyArtifacts(player.Character)
-player.CharacterAdded:Connect(function(char)
-    task.wait(0.25)
-    clearFlyArtifacts(char)
-end)
 
 local function isWhitelisted(p)
     for _,n in ipairs(Config.Whitelist) do if n:lower()==p.Name:lower() then return true end end; return false
@@ -632,6 +606,9 @@ makeToggle(pageExt,"🔴 Rage Mode","RageMode",function(on)
         saveConfig()
     end
 end)
+secLabel(pageExt,"Fly")
+makeToggle(pageExt,"Fly Enabled","FlyEnabled")
+makeSlider(pageExt,"Velocidad Fly","FlySpeed",10,200)
 
 -- ── INF STAMINA ──────────────────────────────────────────────
 secLabel(pageExt,"Stamina")
