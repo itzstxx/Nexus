@@ -26,6 +26,12 @@ local DefaultConfig = {
     TargetPart="Random",
     FovColorR=0,   FovColorG=190, FovColorB=255,
     SnapColorR=0,  SnapColorG=190,SnapColorB=255,
+    -- TriggerBot: dispara solo cuando el cursor está ENCIMA de un enemigo
+    TriggerBotEnabled=false,
+    -- FovAim: mueve la cámara suavemente hacia el objetivo dentro del FOV
+    FovAimEnabled=false, FovAimStrength=8,
+    -- NPC Silent Aim
+    NpcSilentAimEnabled=false, NpcTargetPart="UpperTorso",
     EspEnabled=false, EspBox=true, EspSkeleton=true, EspHealthBar=true,
     EspDistance=true, EspNames=true, EspMaxDist=500, ItemInHand=true,
     BoxColorR=0,  BoxColorG=220, BoxColorB=255,
@@ -139,7 +145,7 @@ local logoImg=Instance.new("ImageLabel")
 logoImg.Size=UDim2.fromOffset(logoSize,logoSize)
 logoImg.Position=UDim2.new(0,6,0.5,-(logoSize/2))
 logoImg.BackgroundTransparency=1
-logoImg.Image="rbxassetid://1779405825649"
+logoImg.Image="rbxassetid://77130965021335"
 logoImg.ScaleType=Enum.ScaleType.Fit
 logoImg.ImageTransparency=0
 logoImg.Parent=header
@@ -564,6 +570,14 @@ makeToggle(pageAim,"Snapline",         "Snapline")
 makeColorRow(pageAim,"Snap Color",     "SnapColorR","SnapColorG","SnapColorB")
 secLabel(pageAim,"Target")
 makeDropdown(pageAim,"Target Part",    "TargetPart",{"Head","UpperTorso","LowerTorso","Pierna","Pecho","Combo","Random"})
+secLabel(pageAim,"Trigger Bot")
+makeToggle(pageAim,"TriggerBot",       "TriggerBotEnabled")
+secLabel(pageAim,"FOV Aim (Suave)")
+makeToggle(pageAim,"FovAim",           "FovAimEnabled")
+makeSlider(pageAim,"FovAim Fuerza",    "FovAimStrength",1,20)
+secLabel(pageAim,"NPC Silent Aim")
+makeToggle(pageAim,"NPC Silent Aim",   "NpcSilentAimEnabled")
+makeDropdown(pageAim,"NPC Part",       "NpcTargetPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS
@@ -588,12 +602,23 @@ makeToggle(pageVis,"Item en la Mano",  "ItemInHand")
 -- ══════════════════════════════════════════════════════════════
 local pageExt=tabPages[3]
 secLabel(pageExt,"Rage Mode")
+local rageSaved=nil
 makeToggle(pageExt,"🔴 Rage Mode","RageMode",function(on)
     if on then
+        rageSaved={
+            SilentAimEnabled=Config.SilentAimEnabled,HitChance=Config.HitChance,
+            FovRadius=Config.FovRadius,VisibleCheck=Config.VisibleCheck,
+            Manipulation=Config.Manipulation,TargetPart=Config.TargetPart,
+        }
         Config.SilentAimEnabled=true; Config.HitChance=100
         Config.FovRadius=999; Config.VisibleCheck=false
         Config.Manipulation=true; Config.TargetPart="Head"
         saveConfig()
+    else
+        if rageSaved then
+            for k,v in pairs(rageSaved) do Config[k]=v end
+            rageSaved=nil; saveConfig()
+        end
     end
 end)
 secLabel(pageExt,"Fly")
@@ -950,7 +975,7 @@ fab.Position= isMobile
     or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))
 fab.BackgroundColor3=C_DARK; fab.BorderSizePixel=0
 fab.AutoButtonColor=false
-fab.Image="rbxassetid://1779405825649"
+fab.Image="rbxassetid://77130965021335"
 fab.ScaleType=Enum.ScaleType.Fit
 fab.ZIndex=20; fab.Parent=gui
 stroke(fab,C_ACCENT,2)
@@ -1068,7 +1093,7 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- FLY
+-- FLY  (LinearVelocity + AlignOrientation — no kickea)
 -- ══════════════════════════════════════════════════════════════
 local flyActive=false
 local function stopFly()
@@ -1078,8 +1103,13 @@ local function stopFly()
     local root=char:FindFirstChild("HumanoidRootPart")
     if hum then hum.PlatformStand=false end
     if root then
-        local bp=root:FindFirstChild("SyyFlyBP"); local bg=root:FindFirstChild("SyyFlyBG")
-        if bp then bp:Destroy() end; if bg then bg:Destroy() end
+        for _,name in ipairs({"SyyFlyLV","SyyFlyAO","SyyFlyAtt"}) do
+            local obj=root:FindFirstChild(name); if obj then obj:Destroy() end
+        end
+        -- limpiar también los legacy por si quedan
+        for _,name in ipairs({"SyyFlyBP","SyyFlyBG"}) do
+            local obj=root:FindFirstChild(name); if obj then obj:Destroy() end
+        end
     end
 end
 local function startFly()
@@ -1089,15 +1119,28 @@ local function startFly()
     local root=char:FindFirstChild("HumanoidRootPart")
     if not hum or not root then return end
     hum.PlatformStand=true
-    if not root:FindFirstChild("SyyFlyBP") then
-        local bp=Instance.new("BodyPosition"); bp.Name="SyyFlyBP"
-        bp.MaxForce=Vector3.new(1e5,1e5,1e5); bp.Position=root.Position
-        bp.D=500; bp.P=10000; bp.Parent=root
+    -- Attachment raíz
+    if not root:FindFirstChild("SyyFlyAtt") then
+        local att=Instance.new("Attachment"); att.Name="SyyFlyAtt"; att.Parent=root
     end
-    if not root:FindFirstChild("SyyFlyBG") then
-        local bg=Instance.new("BodyGyro"); bg.Name="SyyFlyBG"
-        bg.MaxTorque=Vector3.new(1e5,1e5,1e5); bg.D=100; bg.P=10000
-        bg.CFrame=root.CFrame; bg.Parent=root
+    local att=root:FindFirstChild("SyyFlyAtt")
+    -- LinearVelocity (no genera detección de velocidad anormal como BodyPosition)
+    if not root:FindFirstChild("SyyFlyLV") then
+        local lv=Instance.new("LinearVelocity"); lv.Name="SyyFlyLV"
+        lv.Attachment0=att
+        lv.MaxForce=math.huge
+        lv.VectorVelocity=Vector3.zero
+        lv.RelativeTo=Enum.ActuatorRelativeTo.World
+        lv.Parent=root
+    end
+    -- AlignOrientation para mantener upright
+    if not root:FindFirstChild("SyyFlyAO") then
+        local ao=Instance.new("AlignOrientation"); ao.Name="SyyFlyAO"
+        ao.Attachment0=att
+        ao.MaxTorque=math.huge; ao.MaxAngularVelocity=math.huge
+        ao.Responsiveness=50
+        ao.CFrame=root.CFrame
+        ao.Parent=root
     end
 end
 player.CharacterAdded:Connect(function()
@@ -1153,6 +1196,7 @@ Players.PlayerAdded:Connect(createEsp); Players.PlayerRemoving:Connect(removeEsp
 -- SILENT AIM
 -- ══════════════════════════════════════════════════════════════
 local cachedTargetPos=nil
+local cachedNpcPos=nil  -- NPC silent aim
 local isFiring=false
 UserInputService.InputBegan:Connect(function(inp)
     if inp.UserInputType==Enum.UserInputType.MouseButton1 then isFiring=true
@@ -1184,20 +1228,26 @@ pcall(function()
     local oldNC
     oldNC=hookmetamethod(game,"__namecall",newcclosure(function(...)
         local method=getnamecallmethod()
-        if not Config.SilentAimEnabled then return oldNC(...) end
+        -- Determinar qué posición usar (player o NPC)
+        local usePos=nil
+        if Config.SilentAimEnabled and cachedTargetPos then usePos=cachedTargetPos end
+        if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos then usePos=cachedNpcPos end
+        if not usePos then return oldNC(...) end
         if checkcaller() then return oldNC(...) end
-        if not cachedTargetPos then return oldNC(...) end
+        -- HitChance REAL: cada bala individual tiene X% de probabilidad de desviarse
+        -- math.random genera un número entre 1-100 para CADA llamada al raycast
+        -- Si HitChance=70, 70% de los rays se redirigen, 30% pasan normales
         if math.random(100)>Config.HitChance then return oldNC(...) end
         local args={...}
         if args[1]~=Workspace then return oldNC(...) end
         if method=="Raycast" then
             if typeof(args[2])~="Vector3" or typeof(args[3])~="Vector3" then return oldNC(...) end
-            args[3]=(cachedTargetPos-args[2]).Unit*1000
+            args[3]=(usePos-args[2]).Unit*1000
             if Config.Manipulation then args[4]=wallbreakParams end
             return oldNC(table.unpack(args))
         elseif method=="FindPartOnRayWithIgnoreList" or method=="FindPartOnRay" then
             if typeof(args[2])~="Ray" then return oldNC(...) end
-            local o=args[2].Origin; args[2]=Ray.new(o,(cachedTargetPos-o).Unit*1000)
+            local o=args[2].Origin; args[2]=Ray.new(o,(usePos-o).Unit*1000)
             if Config.Manipulation and method=="FindPartOnRayWithIgnoreList" then args[3]={} end
             return oldNC(table.unpack(args))
         end
@@ -1219,9 +1269,9 @@ RunService.RenderStepped:Connect(function()
     if Config.FlyEnabled and flyActive then
         local char=player.Character
         local root=char and char:FindFirstChild("HumanoidRootPart")
-        local bp=root and root:FindFirstChild("SyyFlyBP")
-        local bg=root and root:FindFirstChild("SyyFlyBG")
-        if bp and bg then
+        local lv=root and root:FindFirstChild("SyyFlyLV")
+        local ao=root and root:FindFirstChild("SyyFlyAO")
+        if lv and ao then
             local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
@@ -1234,9 +1284,9 @@ RunService.RenderStepped:Connect(function()
                 local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
                 if wf.Magnitude>0.01 then mv=mv+wf.Unit end
             end
-            if mv.Magnitude>0 then bp.Position=bp.Position+mv.Unit*sp*0.016
-            else bp.Position=root.Position end
-            bg.CFrame=CFrame.new(root.Position,root.Position+camCF.LookVector)
+            lv.VectorVelocity = mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
+            -- Mantener la orientación mirando hacia la cámara, sin roll
+            ao.CFrame=CFrame.new(root.Position, root.Position+Vector3.new(camCF.LookVector.X,0,camCF.LookVector.Z))
         end
     end
 
@@ -1260,64 +1310,76 @@ RunService.RenderStepped:Connect(function()
                 local root=char:FindFirstChild("HumanoidRootPart")
                 if not hum or hum.Health<=0 or not root then continue end
 
-                -- VisibleCheck ON: tiene que estar en pantalla y dentro del FOV (comportamiento original)
-                -- VisibleCheck OFF: solo aplica a enemigos detrás del jugador (no importa si están en pantalla)
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+
                 if Config.VisibleCheck then
-                    local sp2,onS=camera:WorldToViewportPoint(root.Position)
                     if not onS then continue end
-                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
                     if d2>Config.FovRadius then continue end
-                    -- visible check: no puede haber paredes entre cámara y objetivo
-                    local lc=player.Character
-                    if lc then
-                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                        if ok and #obs>0 then continue end
-                    end
-                    if d2<bestD then
-                        bestD=d2
-                        local pn=Config.TargetPart
-                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                        elseif pn=="Pierna" then pn="LowerTorso"
-                        elseif pn=="Pecho" then pn="UpperTorso"
-                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                        local hp2=char:FindFirstChild(pn) or root
-                        bestPos=hp2.Position
+                    if not Config.Manipulation then
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
                     end
                 else
-                    -- Sin VisibleCheck: el objetivo debe estar DETRÁS del jugador
-                    -- (el vector desde myRoot hacia root apunta en dirección opuesta a camLook)
-                    if not myRoot2 then continue end
-                    local toTarget=(root.Position-myRoot2.Position)
-                    local toTargetFlat=Vector3.new(toTarget.X,0,toTarget.Z)
-                    local camFlat=Vector3.new(camLook.X,0,camLook.Z)
-                    -- dot negativo = está detrás
-                    local dot = toTargetFlat.Magnitude>0.01 and camFlat:Dot(toTargetFlat.Unit) or 0
-                    if dot >= 0 then continue end  -- está delante, ignorar
-
-                    -- sin paredes entre el jugador y el objetivo
-                    local lc=player.Character
-                    if lc then
-                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                        if ok and #obs>0 then continue end
+                    if not Config.Manipulation then
+                        if not myRoot2 then continue end
+                        local toTarget=(root.Position-myRoot2.Position)
+                        local toFlat=Vector3.new(toTarget.X,0,toTarget.Z)
+                        local camFlat=Vector3.new(camLook.X,0,camLook.Z)
+                        local dot=toFlat.Magnitude>0.01 and camFlat:Dot(toFlat.Unit) or 0
+                        if dot>=0 then continue end
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
                     end
+                end
 
-                    -- distancia en pantalla al centro (para elegir el más cercano al centro si hay varios)
-                    local sp2,_=camera:WorldToViewportPoint(root.Position)
-                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                    if d2<bestD then
-                        bestD=d2
-                        local pn=Config.TargetPart
-                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                        elseif pn=="Pierna" then pn="LowerTorso"
-                        elseif pn=="Pecho" then pn="UpperTorso"
-                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                        local hp2=char:FindFirstChild(pn) or root
-                        bestPos=hp2.Position
-                    end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.TargetPart
+                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                    elseif pn=="Pierna" then pn="LowerTorso"
+                    elseif pn=="Pecho" then pn="UpperTorso"
+                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                    local hp2=char:FindFirstChild(pn) or root
+                    bestPos=hp2.Position
                 end
             end
             cachedTargetPos=bestPos
         else cachedTargetPos=nil end
+
+        -- NPC Silent Aim target
+        if Config.NpcSilentAimEnabled then
+            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local bestD=math.huge; cachedNpcPos=nil
+            for _,obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Humanoid") and obj.Health>0 then
+                    local npcRoot=obj.Parent:FindFirstChild("HumanoidRootPart")
+                    if not npcRoot then continue end
+                    -- Asegurarse de que NO es un player
+                    local isPlayer=false
+                    for _,pl in ipairs(Players:GetPlayers()) do
+                        if pl.Character==obj.Parent then isPlayer=true; break end
+                    end
+                    if isPlayer then continue end
+                    local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
+                    if not onS then continue end
+                    local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                    if d2>Config.FovRadius then continue end
+                    if d2<bestD then
+                        bestD=d2
+                        local pn=Config.NpcTargetPart
+                        local part=obj.Parent:FindFirstChild(pn) or npcRoot
+                        cachedNpcPos=part.Position
+                    end
+                end
+            end
+        else cachedNpcPos=nil end
     end
 
     local vpSize=camera.ViewportSize
@@ -1325,11 +1387,57 @@ RunService.RenderStepped:Connect(function()
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-    -- FOV
-    fovCircle.Visible=Config.FovEnabled and Config.SilentAimEnabled
+    -- FOV Circle
+    fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.FovAimEnabled or Config.TriggerBotEnabled)
     if fovCircle.Visible then
         fovCircle.Position=center2D; fovCircle.Radius=Config.FovRadius
         fovCircle.Color=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
+    end
+
+    -- FovAim: mueve la cámara suave hacia el target más cercano al FOV
+    if Config.FovAimEnabled then
+        local bestP,bestD2=nil,math.huge
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p==player or isWhitelisted(p) then continue end
+            local char=p.Character; if not char then continue end
+            local hum=char:FindFirstChildOfClass("Humanoid")
+            local root=char:FindFirstChild("HumanoidRootPart")
+            if not hum or hum.Health<=0 or not root then continue end
+            local sp2,onS=camera:WorldToViewportPoint(root.Position)
+            if not onS then continue end
+            local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
+            if d<Config.FovRadius and d<bestD2 then bestD2=d; bestP=root end
+        end
+        if bestP then
+            local targetCF=CFrame.new(camera.CFrame.Position, bestP.Position)
+            camera.CFrame=camera.CFrame:Lerp(targetCF, Config.FovAimStrength*0.01)
+        end
+    end
+
+    -- TriggerBot: simula click cuando el cursor está encima de un enemigo
+    if Config.TriggerBotEnabled and not isFiring then
+        local unitRay=camera:ScreenPointToRay(center2D.X, center2D.Y)
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        if myChar then params.FilterDescendantsInstances={myChar} end
+        local result=Workspace:Raycast(unitRay.Origin, unitRay.Direction*600, params)
+        if result and result.Instance then
+            local hitChar=result.Instance:FindFirstAncestorOfClass("Model")
+            if hitChar then
+                local hum=hitChar:FindFirstChildOfClass("Humanoid")
+                local isEnemy=false
+                for _,p in ipairs(Players:GetPlayers()) do
+                    if p~=player and p.Character==hitChar and not isWhitelisted(p) then isEnemy=true; break end
+                end
+                if hum and hum.Health>0 and isEnemy then
+                    -- Simular disparo activando el tool
+                    local tool=myChar and myChar:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                    end
+                end
+            end
+        end
     end
 
     local boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB)
@@ -1417,4 +1525,4 @@ RunService.RenderStepped:Connect(function()
     if not snapTargetP then snapLineDraw.Visible=false end
 end)
 
-print("[SYY V1] Loaded — "..player.Name)
+print("[SYY V2] Loaded — "..player.Name)
