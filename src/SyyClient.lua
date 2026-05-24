@@ -43,6 +43,7 @@ local DefaultConfig = {
     HealthHighColorR=80,HealthHighColorG=255,HealthHighColorB=80,
     HealthBgColorR=20,HealthBgColorG=20,HealthBgColorB=20,
     FlyEnabled=false, FlySpeed=50, RageMode=false, InfStamina=false,
+    StreamMode=false,
     Whitelist={},
 }
 local Config = {}
@@ -73,13 +74,44 @@ local function removeWhitelist(name)
 end
 
 -- ══════════════════════════════════════════════════════════════
--- GUI
+-- GUI  —  StreamMode: oculta UI/drawings mientras grabas o transmites.
 -- ══════════════════════════════════════════════════════════════
+
 local old=playerGui:FindFirstChild("SyySystemUI"); if old then old:Destroy() end
 
 local gui=Instance.new("ScreenGui")
 gui.Name="SyySystemUI"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
-gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; gui.DisplayOrder=99; gui.Parent=playerGui
+gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; gui.DisplayOrder=99
+gui.Parent=playerGui
+
+local streamModeOn=false
+local streamSaved={EspEnabled=nil,FovEnabled=nil,Snapline=nil,ItemInHand=nil}
+
+local function applyStreamMode(on)
+    on = on and true or false
+    if streamModeOn == on then return end
+    streamModeOn = on
+    Config.StreamMode = on
+
+    if on then
+        streamSaved.EspEnabled=Config.EspEnabled
+        streamSaved.FovEnabled=Config.FovEnabled
+        streamSaved.Snapline=Config.Snapline
+        streamSaved.ItemInHand=Config.ItemInHand
+        Config.EspEnabled=false
+        Config.FovEnabled=false
+        Config.Snapline=false
+        Config.ItemInHand=false
+        gui.Enabled=false
+    else
+        if streamSaved.EspEnabled~=nil then Config.EspEnabled=streamSaved.EspEnabled end
+        if streamSaved.FovEnabled~=nil then Config.FovEnabled=streamSaved.FovEnabled end
+        if streamSaved.Snapline~=nil then Config.Snapline=streamSaved.Snapline end
+        if streamSaved.ItemInHand~=nil then Config.ItemInHand=streamSaved.ItemInHand end
+        gui.Enabled=true
+    end
+    saveConfig()
+end
 
 -- helpers
 local function stroke(p,col,thick)
@@ -853,6 +885,27 @@ end)
 -- TAB 4: SETTINGS
 -- ══════════════════════════════════════════════════════════════
 local pageSet=tabPages[4]
+
+-- ── STREAM MODE ─────────────────────────────────────────────
+secLabel(pageSet,"🎥 Stream / Discord")
+makeToggle(pageSet,"📵 Stream Mode","StreamMode",function(on)
+    applyStreamMode(on)
+end)
+-- Indicador visual de estado
+do
+    local infoRow=Instance.new("Frame")
+    infoRow.Size=UDim2.new(1,0,0,ROW_H); infoRow.BackgroundColor3=C_ROW
+    infoRow.BorderSizePixel=0; infoRow.Parent=pageSet
+    stroke(infoRow,Color3.fromRGB(0,60,90),1)
+    local infoLbl=Instance.new("TextLabel")
+    infoLbl.Size=UDim2.new(1,-8,1,0); infoLbl.Position=UDim2.fromOffset(8,0)
+    infoLbl.BackgroundTransparency=1; infoLbl.TextWrapped=true
+    infoLbl.Text="ON → oculta GUI/ESP/FOV/Snapline. RightAlt alterna rápido."
+    infoLbl.TextColor3=C_DIM; infoLbl.Font=Enum.Font.GothamMedium
+    infoLbl.TextSize=isMobile and 10 or 9
+    infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=infoRow
+end
+
 secLabel(pageSet,"Whitelist")
 do
     local inputRow=Instance.new("Frame")
@@ -1073,7 +1126,12 @@ end
 
 UserInputService.InputBegan:Connect(function(inp,proc)
     if proc then return end
+    if inp.KeyCode==Enum.KeyCode.RightAlt then
+        applyStreamMode(not streamModeOn)
+        return
+    end
     if inp.KeyCode==Enum.KeyCode.RightShift then
+        if streamModeOn then return end
         if main.Visible then
             TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
             task.delay(0.15,function() main.Visible=false; main.BackgroundTransparency=0 end)
@@ -1288,6 +1346,17 @@ end)
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
+    if streamModeOn then
+        fovCircle.Visible=false
+        snapLineDraw.Visible=false
+        for p,obj in pairs(espObjects) do
+            obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
+            obj.healthBar.Visible=false; obj.healthBg.Visible=false
+            for _,l in ipairs(obj.skeleton) do l.Visible=false end
+            if itemDrawings[p] then itemDrawings[p].Visible=false end
+        end
+        return
+    end
 
     -- FLY
     if Config.FlyEnabled~=flyActive then
@@ -1591,3 +1660,10 @@ RunService.RenderStepped:Connect(function()
 end)
 
 print("[SYY V2] Loaded — "..player.Name)
+
+task.defer(function()
+    if Config.StreamMode then
+        streamModeOn=false
+        applyStreamMode(true)
+    end
+end)
