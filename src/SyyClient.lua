@@ -28,8 +28,9 @@ local DefaultConfig = {
     SnapColorR=0,  SnapColorG=190,SnapColorB=255,
     -- TriggerBot: dispara solo cuando el cursor está ENCIMA de un enemigo
     TriggerBotEnabled=false,
-    -- FovAim: mueve la cámara suavemente hacia el objetivo dentro del FOV
-    FovAimEnabled=false, FovAimStrength=8,
+    -- CamLock: bloquea la cámara al objetivo más cercano dentro del rango
+    CamLockEnabled=false, CamLockStrength=10,
+    CamLockRange=150, CamLockWallCheck=true,
     -- NPC Silent Aim
     NpcSilentAimEnabled=false, NpcTargetPart="UpperTorso",
     EspEnabled=false, EspBox=true, EspSkeleton=true, EspHealthBar=true,
@@ -618,9 +619,11 @@ secLabel(pageAim,"Target")
 makeDropdown(pageAim,"Target Part",    "TargetPart",{"Head","UpperTorso","LowerTorso","Pierna","Pecho","Combo","Random"})
 secLabel(pageAim,"Trigger Bot")
 makeToggle(pageAim,"TriggerBot",       "TriggerBotEnabled")
-secLabel(pageAim,"FOV Aim (Suave)")
-makeToggle(pageAim,"FovAim",           "FovAimEnabled")
-makeSlider(pageAim,"FovAim Fuerza",    "FovAimStrength",1,20)
+secLabel(pageAim,"Cam Lock")
+makeToggle(pageAim,"Cam Lock",         "CamLockEnabled")
+makeSlider(pageAim,"CamLock Fuerza",   "CamLockStrength",1,20)
+makeSlider(pageAim,"Rango Detección",  "CamLockRange",10,600)
+makeToggle(pageAim,"Wall Check",       "CamLockWallCheck")
 secLabel(pageAim,"NPC Silent Aim")
 makeToggle(pageAim,"NPC Silent Aim",   "NpcSilentAimEnabled")
 makeDropdown(pageAim,"NPC Part",       "NpcTargetPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
@@ -1526,7 +1529,7 @@ RunService.RenderStepped:Connect(function()
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
 
     -- FOV Circle — se pone ROJO cuando el objetivo NPC está detrás de una pared
-    fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.FovAimEnabled or Config.TriggerBotEnabled or Config.NpcSilentAimEnabled)
+    fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.CamLockEnabled or Config.TriggerBotEnabled or Config.NpcSilentAimEnabled)
     if fovCircle.Visible then
         fovCircle.Position=center2D; fovCircle.Radius=Config.FovRadius
         -- Rojo si NPC detrás de pared, color normal en cualquier otro caso
@@ -1537,41 +1540,62 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- FovAim: mueve la cámara suave hacia el target más cercano al FOV
-    -- FIJO: ya no sube para arriba, usa lerp de dirección con el eje right estable
-    if Config.FovAimEnabled then
-        local bestP,bestD2=nil,math.huge
+    -- ═══════════════════════════════════════════════════════════
+    -- CAM LOCK — bloquea la cámara al jugador más cercano
+    --   • Kill check    : descarta objetivos con Health <= 0
+    --   • Rango 3D      : Config.CamLockRange (studs)
+    --   • Wall check    : Config.CamLockWallCheck (usa GetPartsObscuringTarget)
+    --   • Whitelist     : respeta la lista blanca igual que silent aim
+    -- ═══════════════════════════════════════════════════════════
+    if Config.CamLockEnabled then
+        local bestLockRoot=nil
+        local bestLockDist=math.huge
+
         for _,p in ipairs(Players:GetPlayers()) do
             if p==player or isWhitelisted(p) then continue end
             local char=p.Character; if not char then continue end
             local hum=char:FindFirstChildOfClass("Humanoid")
             local root=char:FindFirstChild("HumanoidRootPart")
+
+            -- Kill check: solo apuntar a objetivos vivos
             if not hum or hum.Health<=0 or not root then continue end
-            local sp2,onS=camera:WorldToViewportPoint(root.Position)
-            if not onS then continue end
-            local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
-            if d<Config.FovRadius and d<bestD2 then
-                if Config.VisibleCheck and not Config.Manipulation then
-                    local lc=player.Character
-                    if lc then
-                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                        if ok and #obs>0 then continue end
-                    end
+
+            -- Rango de detección 3D
+            local dist3D=myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
+            if dist3D>Config.CamLockRange then continue end
+
+            -- Wall check: si está activado, ignorar objetivos detrás de paredes
+            if Config.CamLockWallCheck then
+                local lc=player.Character
+                if lc then
+                    local ok,obs=pcall(function()
+                        return camera:GetPartsObscuringTarget({root.Position},{lc,char})
+                    end)
+                    if ok and #obs>0 then continue end
                 end
-                bestD2=d; bestP=root
+            end
+
+            -- El objetivo válido más cercano al jugador (no al cursor)
+            if dist3D<bestLockDist then
+                bestLockDist=dist3D
+                bestLockRoot=root
             end
         end
-        if bestP then
+
+        if bestLockRoot then
             local camCF=camera.CFrame
             local camPos=camCF.Position
-            local currentLook=camCF.LookVector
-            -- Apuntar al torso levantado +1.5 para no apuntar a los pies
-            local targetPos=Vector3.new(bestP.Position.X,bestP.Position.Y+1.5,bestP.Position.Z)
+            -- Apuntar al UpperTorso (+1.5 sobre el root) para no apuntar a los pies
+            local targetPos=Vector3.new(
+                bestLockRoot.Position.X,
+                bestLockRoot.Position.Y+1.5,
+                bestLockRoot.Position.Z
+            )
             local rawDir=targetPos-camPos
             if rawDir.Magnitude>0.01 then
                 local targetDir=rawDir.Unit
-                local strength=math.clamp(Config.FovAimStrength,1,20)*0.015
-                local newLook=currentLook:Lerp(targetDir,strength)
+                local strength=math.clamp(Config.CamLockStrength,1,20)*0.015
+                local newLook=camCF.LookVector:Lerp(targetDir,strength)
                 if newLook.Magnitude>0.01 then
                     camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
                 end
