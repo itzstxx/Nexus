@@ -74,35 +74,48 @@ local function removeWhitelist(name)
 end
 
 -- ══════════════════════════════════════════════════════════════
--- GUI  —  StreamMode: mueve la UI a CoreGui para que Discord
---         / OBS no la capture en el stream, pero tú la ves.
+-- GUI  —  StreamMode: oculta UI/drawings mientras grabas o transmites.
 -- ══════════════════════════════════════════════════════════════
-local CoreGui = game:GetService("CoreGui")
 
 local old=playerGui:FindFirstChild("SyySystemUI"); if old then old:Destroy() end
-local oldCG=CoreGui:FindFirstChild("SyySystemUI"); if oldCG then oldCG:Destroy() end
 
--- función para obtener el padre correcto según StreamMode
-local function guiParent()
-    return Config.StreamMode and CoreGui or playerGui
+local toggleRefreshers={}
+local function refreshAllToggles()
+    for _,refresh in pairs(toggleRefreshers) do pcall(refresh) end
 end
 
 local gui=Instance.new("ScreenGui")
 gui.Name="SyySystemUI"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
 gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; gui.DisplayOrder=99
--- parenting inicial
-pcall(function() gui.Parent=guiParent() end)
-if not gui.Parent then gui.Parent=playerGui end  -- fallback si CoreGui no disponible
+gui.Parent=playerGui
 
--- función para aplicar/quitar StreamMode moviendo el ScreenGui
+local streamModeOn=false
+local streamTouchToken=nil
+local streamSaved={EspEnabled=nil,FovEnabled=nil,Snapline=nil,ItemInHand=nil}
 local function applyStreamMode(on)
-    local target = on and CoreGui or playerGui
-    local ok = pcall(function() gui.Parent=target end)
-    if not ok then
-        -- si no hay permisos para CoreGui, al menos ocultamos los drawings en stream
-        -- (los drawings de Drawing API nunca aparecen en Discord de todas formas)
-        warn("[SYY] Sin permisos de CoreGui — drawings ya son invisibles en stream")
+    on = on and true or false
+    if streamModeOn == on then return end
+    streamModeOn = on
+    Config.StreamMode = on
+    if on then
+        streamSaved.EspEnabled=Config.EspEnabled
+        streamSaved.FovEnabled=Config.FovEnabled
+        streamSaved.Snapline=Config.Snapline
+        streamSaved.ItemInHand=Config.ItemInHand
+        Config.EspEnabled=false
+        Config.FovEnabled=false
+        Config.Snapline=false
+        Config.ItemInHand=false
+        gui.Enabled=false
+    else
+        if streamSaved.EspEnabled~=nil then Config.EspEnabled=streamSaved.EspEnabled end
+        if streamSaved.FovEnabled~=nil then Config.FovEnabled=streamSaved.FovEnabled end
+        if streamSaved.Snapline~=nil then Config.Snapline=streamSaved.Snapline end
+        if streamSaved.ItemInHand~=nil then Config.ItemInHand=streamSaved.ItemInHand end
+        gui.Enabled=true
     end
+    refreshAllToggles()
+    saveConfig()
 end
 
 -- helpers
@@ -330,6 +343,7 @@ local function makeToggle(page,text,key,cb)
         }):Play()
     end
     refresh()
+    toggleRefreshers[key]=refresh
 
     local hitbox=Instance.new("TextButton")
     hitbox.Size=UDim2.new(1,0,1,0); hitbox.BackgroundTransparency=1
@@ -646,10 +660,11 @@ makeToggle(pageExt,"🔴 Rage Mode","RageMode",function(on)
         Config.FovRadius=999; Config.VisibleCheck=false
         Config.Manipulation=true; Config.TargetPart="Head"
         saveConfig()
+        refreshAllToggles()
     else
         if rageSaved then
             for k,v in pairs(rageSaved) do Config[k]=v end
-            rageSaved=nil; saveConfig()
+            rageSaved=nil; saveConfig(); refreshAllToggles()
         end
     end
 end)
@@ -882,8 +897,6 @@ local pageSet=tabPages[4]
 secLabel(pageSet,"🎥 Stream / Discord")
 makeToggle(pageSet,"📵 Stream Mode","StreamMode",function(on)
     applyStreamMode(on)
-    -- Los drawings (ESP, FOV, Snapline) de la Drawing API ya son invisibles
-    -- en Discord/OBS por naturaleza — solo movemos el ScreenGui
 end)
 -- Indicador visual de estado
 do
@@ -894,7 +907,7 @@ do
     local infoLbl=Instance.new("TextLabel")
     infoLbl.Size=UDim2.new(1,-8,1,0); infoLbl.Position=UDim2.fromOffset(8,0)
     infoLbl.BackgroundTransparency=1; infoLbl.TextWrapped=true
-    infoLbl.Text="ON → GUI invisible en Discord/stream. OFF → normal."
+    infoLbl.Text="ON → oculta GUI/ESP/FOV/Snapline. En móvil mantén cualquier esquina 2s para volver."
     infoLbl.TextColor3=C_DIM; infoLbl.Font=Enum.Font.GothamMedium
     infoLbl.TextSize=isMobile and 10 or 9
     infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=infoRow
@@ -1080,6 +1093,7 @@ do
                             Color=Config.SilentAimEnabled and Color3.fromRGB(80,255,160) or C_ACCENT
                         }):Play()
                     end
+                    refreshAllToggles()
                 end
             end)
         end
@@ -1119,8 +1133,26 @@ do
 end
 
 UserInputService.InputBegan:Connect(function(inp,proc)
+    if inp.UserInputType==Enum.UserInputType.Touch and streamModeOn then
+        local vp=camera.ViewportSize
+        local x,y=inp.Position.X,inp.Position.Y
+        local corner=(x<=90 and y<=90) or (x>=vp.X-90 and y<=90)
+            or (x<=90 and y>=vp.Y-90) or (x>=vp.X-90 and y>=vp.Y-90)
+        if not corner then return end
+        local token=os.clock()
+        streamTouchToken=token
+        task.delay(2,function()
+            if streamTouchToken==token and streamModeOn then applyStreamMode(false) end
+        end)
+        return
+    end
     if proc then return end
+    if inp.KeyCode==Enum.KeyCode.RightAlt then
+        applyStreamMode(not streamModeOn)
+        return
+    end
     if inp.KeyCode==Enum.KeyCode.RightShift then
+        if streamModeOn then return end
         if main.Visible then
             TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
             task.delay(0.15,function() main.Visible=false; main.BackgroundTransparency=0 end)
@@ -1131,6 +1163,13 @@ UserInputService.InputBegan:Connect(function(inp,proc)
     end
     if inp.KeyCode==Enum.KeyCode.RightControl then
         Config.SilentAimEnabled=not Config.SilentAimEnabled; saveConfig()
+        refreshAllToggles()
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType==Enum.UserInputType.Touch then
+        streamTouchToken=nil
     end
 end)
 
@@ -1335,6 +1374,17 @@ end)
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
+    if streamModeOn then
+        fovCircle.Visible=false
+        snapLineDraw.Visible=false
+        for p,obj in pairs(espObjects) do
+            obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
+            obj.healthBar.Visible=false; obj.healthBg.Visible=false
+            for _,l in ipairs(obj.skeleton) do l.Visible=false end
+            if itemDrawings[p] then itemDrawings[p].Visible=false end
+        end
+        return
+    end
 
     -- FLY
     if Config.FlyEnabled~=flyActive then
@@ -1500,7 +1550,16 @@ RunService.RenderStepped:Connect(function()
             local sp2,onS=camera:WorldToViewportPoint(root.Position)
             if not onS then continue end
             local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
-            if d<Config.FovRadius and d<bestD2 then bestD2=d; bestP=root end
+            if d<Config.FovRadius and d<bestD2 then
+                if Config.VisibleCheck and not Config.Manipulation then
+                    local lc=player.Character
+                    if lc then
+                        local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                        if ok and #obs>0 then continue end
+                    end
+                end
+                bestD2=d; bestP=root
+            end
         end
         if bestP then
             local camCF=camera.CFrame
@@ -1512,12 +1571,9 @@ RunService.RenderStepped:Connect(function()
             if rawDir.Magnitude>0.01 then
                 local targetDir=rawDir.Unit
                 local strength=math.clamp(Config.FovAimStrength,1,20)*0.015
-                local newLook=currentLook:Lerp(targetDir,strength).Unit
-                -- Reconstruir CFrame con eje right fijo para evitar roll y desviación vertical
-                local rightV=camCF.RightVector
-                local upV=(rightV:Cross(newLook)*(-1)).Unit
-                if upV.Magnitude>0.01 then
-                    camera.CFrame=CFrame.fromMatrix(camPos,rightV,upV)
+                local newLook=currentLook:Lerp(targetDir,strength)
+                if newLook.Magnitude>0.01 then
+                    camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
                 end
             end
         end
@@ -1638,3 +1694,10 @@ RunService.RenderStepped:Connect(function()
 end)
 
 print("[SYY V2] Loaded — "..player.Name)
+
+task.defer(function()
+    if Config.StreamMode then
+        streamModeOn=false
+        applyStreamMode(true)
+    end
+end)
