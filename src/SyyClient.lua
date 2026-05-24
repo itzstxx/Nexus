@@ -1372,7 +1372,73 @@ pcall(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- RENDER STEP ÚNICO
+-- CAM LOCK — BindToRenderStep prioridad Camera+1
+--   Corre DESPUÉS del script de cámara nativo de Roblox (prio 200)
+--   así no lo sobreescriben. Funciona en tercera persona móvil.
+--   • Kill check    : descarta objetivos con Health <= 0
+--   • Rango 3D      : Config.CamLockRange (studs)
+--   • Wall check    : Config.CamLockWallCheck
+--   • Whitelist     : isWhitelisted() igual que todo lo demás
+-- ══════════════════════════════════════════════════════════════
+local camLockTarget=nil   -- root del objetivo actualmente bloqueado
+
+RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
+    if not Config.CamLockEnabled then camLockTarget=nil; return end
+
+    local myChar=player.Character
+    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    -- ── Buscar objetivo válido más cercano ──────────────────────
+    local bestRoot=nil
+    local bestDist=math.huge
+
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p==player or isWhitelisted(p) then continue end
+        local char=p.Character; if not char then continue end
+        local hum=char:FindFirstChildOfClass("Humanoid")
+        local root=char:FindFirstChild("HumanoidRootPart")
+
+        -- Kill check
+        if not hum or hum.Health<=0 or not root then continue end
+
+        -- Rango de detección 3D
+        local dist3D=myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
+        if dist3D>Config.CamLockRange then continue end
+
+        -- Wall check
+        if Config.CamLockWallCheck and myChar then
+            local ok,obs=pcall(function()
+                return camera:GetPartsObscuringTarget({root.Position},{myChar,char})
+            end)
+            if ok and #obs>0 then continue end
+        end
+
+        if dist3D<bestDist then bestDist=dist3D; bestRoot=root end
+    end
+
+    camLockTarget=bestRoot
+    if not bestRoot then return end
+
+    -- ── Rotar cámara hacia el objetivo ─────────────────────────
+    -- Mantenemos la POSICIÓN que calculó el script nativo (tercera persona),
+    -- solo sobreescribimos la ORIENTACIÓN.
+    local camPos=camera.CFrame.Position
+    local targetPos=Vector3.new(
+        bestRoot.Position.X,
+        bestRoot.Position.Y+1.5,   -- apunta al torso, no a los pies
+        bestRoot.Position.Z
+    )
+    local rawDir=targetPos-camPos
+    if rawDir.Magnitude<0.1 then return end
+
+    local strength=math.clamp(Config.CamLockStrength,1,20)*0.012
+    local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit, strength)
+    if newLook.Magnitude>0.01 then
+        camera.CFrame=CFrame.lookAt(camPos, camPos+newLook.Unit)
+    end
+end)
+
+-- ── RENDER STEP ÚNICO
 -- ══════════════════════════════════════════════════════════════
 local frame=0
 RunService.RenderStepped:Connect(function()
@@ -1537,69 +1603,6 @@ RunService.RenderStepped:Connect(function()
             fovCircle.Color=Color3.fromRGB(255,40,40)
         else
             fovCircle.Color=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
-        end
-    end
-
-    -- ═══════════════════════════════════════════════════════════
-    -- CAM LOCK — bloquea la cámara al jugador más cercano
-    --   • Kill check    : descarta objetivos con Health <= 0
-    --   • Rango 3D      : Config.CamLockRange (studs)
-    --   • Wall check    : Config.CamLockWallCheck (usa GetPartsObscuringTarget)
-    --   • Whitelist     : respeta la lista blanca igual que silent aim
-    -- ═══════════════════════════════════════════════════════════
-    if Config.CamLockEnabled then
-        local bestLockRoot=nil
-        local bestLockDist=math.huge
-
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p==player or isWhitelisted(p) then continue end
-            local char=p.Character; if not char then continue end
-            local hum=char:FindFirstChildOfClass("Humanoid")
-            local root=char:FindFirstChild("HumanoidRootPart")
-
-            -- Kill check: solo apuntar a objetivos vivos
-            if not hum or hum.Health<=0 or not root then continue end
-
-            -- Rango de detección 3D
-            local dist3D=myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
-            if dist3D>Config.CamLockRange then continue end
-
-            -- Wall check: si está activado, ignorar objetivos detrás de paredes
-            if Config.CamLockWallCheck then
-                local lc=player.Character
-                if lc then
-                    local ok,obs=pcall(function()
-                        return camera:GetPartsObscuringTarget({root.Position},{lc,char})
-                    end)
-                    if ok and #obs>0 then continue end
-                end
-            end
-
-            -- El objetivo válido más cercano al jugador (no al cursor)
-            if dist3D<bestLockDist then
-                bestLockDist=dist3D
-                bestLockRoot=root
-            end
-        end
-
-        if bestLockRoot then
-            local camCF=camera.CFrame
-            local camPos=camCF.Position
-            -- Apuntar al UpperTorso (+1.5 sobre el root) para no apuntar a los pies
-            local targetPos=Vector3.new(
-                bestLockRoot.Position.X,
-                bestLockRoot.Position.Y+1.5,
-                bestLockRoot.Position.Z
-            )
-            local rawDir=targetPos-camPos
-            if rawDir.Magnitude>0.01 then
-                local targetDir=rawDir.Unit
-                local strength=math.clamp(Config.CamLockStrength,1,20)*0.015
-                local newLook=camCF.LookVector:Lerp(targetDir,strength)
-                if newLook.Magnitude>0.01 then
-                    camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
-                end
-            end
         end
     end
 
