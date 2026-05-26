@@ -237,11 +237,30 @@ titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
 
 local subLbl=Instance.new("TextLabel")
 subLbl.Size=UDim2.new(1,-110,0,13)
-subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 34 or 27)
+subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 22 or 27)
 subLbl.BackgroundTransparency=1; subLbl.Text="V1  ·  EnanoTop1 (stx)  ·  "..player.Name
 subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
+
+-- Instagram interactivo: toca para copiar @itzstxx al portapapeles
+local igBtn=Instance.new("TextButton")
+igBtn.Size=UDim2.new(0,isMobile and 110 or 90,0,isMobile and 14 or 11)
+igBtn.Position=UDim2.fromOffset(logoSize+10, isMobile and 37 or 31)
+igBtn.BackgroundTransparency=1; igBtn.BorderSizePixel=0
+igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255)
+igBtn.Font=Enum.Font.GothamBold; igBtn.TextSize=isMobile and 10 or 9
+igBtn.TextXAlignment=Enum.TextXAlignment.Left
+igBtn.AutoButtonColor=false; igBtn.Parent=header
+local igCopied=false
+igBtn.MouseButton1Click:Connect(function()
+    if igCopied then return end; igCopied=true
+    pcall(function() setclipboard("@itzstxx") end)
+    igBtn.Text="✅ Copiado!"; igBtn.TextColor3=Color3.fromRGB(80,255,140)
+    task.delay(1.8,function() igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255); igCopied=false end)
+end)
+igBtn.MouseEnter:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,180,255) end end)
+igBtn.MouseLeave:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(200,140,255) end end)
 
 -- botón X — más grande en móvil
 local closeBtnSz = isMobile and 42 or 34
@@ -1529,6 +1548,24 @@ end)
 
 -- ── RENDER STEP ÚNICO
 -- ══════════════════════════════════════════════════════════════
+-- Colores ESP cacheados — evita Color3.fromRGB() cada frame
+local _boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB)
+local _skelCol=Color3.fromRGB(Config.SkelColorR,Config.SkelColorG,Config.SkelColorB)
+local _namCol=Color3.fromRGB(Config.NameColorR,Config.NameColorG,Config.NameColorB)
+local _snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB)
+local _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
+local _lbR,_lbG,_lbB=Config.BoxColorR,Config.BoxColorG,Config.BoxColorB
+local _lsR,_lsG,_lsB=Config.SkelColorR,Config.SkelColorG,Config.SkelColorB
+local _lnR,_lnG,_lnB=Config.NameColorR,Config.NameColorG,Config.NameColorB
+local _lsnR,_lsnG,_lsnB=Config.SnapColorR,Config.SnapColorG,Config.SnapColorB
+local _lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB
+local function _refreshColors()
+    if Config.BoxColorR~=_lbR  or Config.BoxColorG~=_lbG  or Config.BoxColorB~=_lbB  then _boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB);_lbR,_lbG,_lbB=Config.BoxColorR,Config.BoxColorG,Config.BoxColorB end
+    if Config.SkelColorR~=_lsR or Config.SkelColorG~=_lsG or Config.SkelColorB~=_lsB then _skelCol=Color3.fromRGB(Config.SkelColorR,Config.SkelColorG,Config.SkelColorB);_lsR,_lsG,_lsB=Config.SkelColorR,Config.SkelColorG,Config.SkelColorB end
+    if Config.NameColorR~=_lnR or Config.NameColorG~=_lnG or Config.NameColorB~=_lnB then _namCol=Color3.fromRGB(Config.NameColorR,Config.NameColorG,Config.NameColorB);_lnR,_lnG,_lnB=Config.NameColorR,Config.NameColorG,Config.NameColorB end
+    if Config.SnapColorR~=_lsnR or Config.SnapColorG~=_lsnG or Config.SnapColorB~=_lsnB then _snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB);_lsnR,_lsnG,_lsnB=Config.SnapColorR,Config.SnapColorG,Config.SnapColorB end
+    if Config.FovColorR~=_lfR  or Config.FovColorG~=_lfG  or Config.FovColorB~=_lfB  then _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB);_lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB end
+end
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
@@ -1546,6 +1583,9 @@ RunService.RenderStepped:Connect(function()
         end
         return
     end
+
+    -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
+    if frame%6==0 then _refreshColors() end
 
     -- FLY
     if Config.FlyEnabled~=flyActive then
@@ -1698,7 +1738,7 @@ RunService.RenderStepped:Connect(function()
         if Config.NpcSilentAimEnabled and not npcSilentVisible then
             fovCircle.Color=Color3.fromRGB(255,40,40)
         else
-            fovCircle.Color=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB)
+            fovCircle.Color=_fovCol
         end
     end
 
@@ -1731,10 +1771,10 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    local boxCol=Color3.fromRGB(Config.BoxColorR,Config.BoxColorG,Config.BoxColorB)
-    local skelCol=Color3.fromRGB(Config.SkelColorR,Config.SkelColorG,Config.SkelColorB)
-    local namCol=Color3.fromRGB(Config.NameColorR,Config.NameColorG,Config.NameColorB)
-    local snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB)
+    local boxCol=_boxCol
+    local skelCol=_skelCol
+    local namCol=_namCol
+    local snapCol=_snapCol
 
     local snapTargetP=nil
     if Config.Snapline and Config.SilentAimEnabled and cachedTargetPos then
@@ -1757,12 +1797,12 @@ RunService.RenderStepped:Connect(function()
         local function allOff()
             obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
             obj.healthBar.Visible=false; obj.healthBg.Visible=false
-            for _,l in ipairs(obj.skeleton) do l.Visible=false end
-            if itemDrawings[p] then itemDrawings[p].Visible=false end
+            local sk=obj.skeleton; for i=1,#sk do sk[i].Visible=false end
+            local itd=itemDrawings[p]; if itd then itd.Visible=false end
         end
         if not Config.EspEnabled or not char then allOff(); continue end
         local root=char:FindFirstChild("HumanoidRootPart")
-        local hum=char:FindFirstChildOfClass("Humanoid")
+        local hum=char:FindFirstChild("Humanoid")
         if not root or not hum then allOff(); continue end
         local screenPos,onScreen=camera:WorldToViewportPoint(root.Position)
         if not onScreen then allOff(); continue end
