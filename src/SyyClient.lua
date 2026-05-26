@@ -244,33 +244,6 @@ subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
 
--- Avatar del jugador en el lado derecho del header (antes del botón X)
-local avatarSz = isMobile and 38 or 32
-local avatarImg = Instance.new("ImageLabel")
-avatarImg.Size = UDim2.fromOffset(avatarSz, avatarSz)
-avatarImg.Position = UDim2.new(1, -(closeBtnSz + avatarSz + 10), 0.5, -(avatarSz/2))
-avatarImg.BackgroundColor3 = C_DARK
-avatarImg.BorderSizePixel = 0
-avatarImg.Image = "rbxthumb://type=AvatarHeadShot&id="..player.UserId.."&w=150&h=150"
-avatarImg.ScaleType = Enum.ScaleType.Fit
-avatarImg.Parent = header
-local avatarCorner = Instance.new("UICorner")
-avatarCorner.CornerRadius = UDim.new(1, 0)
-avatarCorner.Parent = avatarImg
-stroke(avatarImg, C_ACCENT, 1)
-
--- Nombre del jugador debajo del avatar
-local avatarNameLbl = Instance.new("TextLabel")
-avatarNameLbl.Size = UDim2.fromOffset(avatarSz + 20, 11)
-avatarNameLbl.Position = UDim2.new(1, -(closeBtnSz + avatarSz + 20), 1, -11)
-avatarNameLbl.BackgroundTransparency = 1
-avatarNameLbl.Text = player.Name
-avatarNameLbl.TextColor3 = C_ACCENT
-avatarNameLbl.Font = Enum.Font.GothamBold
-avatarNameLbl.TextSize = 8
-avatarNameLbl.TextXAlignment = Enum.TextXAlignment.Center
-avatarNameLbl.Parent = header
-
 -- botón X — más grande en móvil
 local closeBtnSz = isMobile and 42 or 34
 local closeBtn=Instance.new("TextButton")
@@ -285,6 +258,22 @@ closeBtn.MouseButton1Click:Connect(function()
     TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
     task.delay(0.15,function() main.Visible=false; main.BackgroundTransparency=0 end)
 end)
+
+-- Avatar del jugador — dentro del header, a la izquierda del botón X
+local avatarSz = isMobile and 36 or 30
+local avatarImg = Instance.new("ImageLabel")
+avatarImg.Size = UDim2.fromOffset(avatarSz, avatarSz)
+avatarImg.Position = UDim2.new(1, -(closeBtnSz + avatarSz + 8), 0.5, -(avatarSz/2))
+avatarImg.BackgroundColor3 = C_DARK
+avatarImg.BorderSizePixel = 0
+avatarImg.ZIndex = 2
+avatarImg.Image = "rbxthumb://type=AvatarHeadShot&id="..player.UserId.."&w=150&h=150"
+avatarImg.ScaleType = Enum.ScaleType.Fit
+avatarImg.Parent = header
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(1, 0)
+avatarCorner.Parent = avatarImg
+stroke(avatarImg, C_ACCENT, 1)
 
 -- ── TAB BAR ─────────────────────────────────────────────────
 local tabBarH = isMobile and 38 or 30
