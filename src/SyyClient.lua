@@ -1423,14 +1423,10 @@ pcall(function()
     oldNC=hookmetamethod(game,"__namecall",newcclosure(function(...)
         local method=getnamecallmethod()
 
-        -- ── STREAM MODE: no intervenir nada ──────────────────────────
-        if streamModeOn then return oldNC(...) end
-
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
-        -- Cubre juegos que mandan daño por remotes en vez de solo raycasts.
-        -- Reemplaza Vector3 que parecen posiciones de hit (> 2 studs de magnitud,
-        -- entre 5 y 2000 studs del jugador).
-        if Config.UniversalSAEnabled and not checkcaller()
+        -- En stream mode se salta (no queremos intervenir remotes), pero
+        -- el raycast silent aim sigue activo siempre.
+        if Config.UniversalSAEnabled and not checkcaller() and not streamModeOn
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
             if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
@@ -1536,103 +1532,10 @@ end)
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
-
-    -- TARGET CACHE corre SIEMPRE, incluso en stream mode,
-    -- para que el silent aim siga funcionando aunque los visuals estén ocultos.
-    if frame%2==0 then
-        local chars={}
-        for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
-        wallbreakParams.FilterDescendantsInstances=chars
-
-        if Config.SilentAimEnabled then
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; local bestPos=nil
-            local myChar2=player.Character
-            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
-            local camLook=camera.CFrame.LookVector
-            for _,p in ipairs(Players:GetPlayers()) do
-                if shouldSkip(p) then continue end
-                local char=p.Character; if not char then continue end
-                local hum=char:FindFirstChildOfClass("Humanoid")
-                local root=char:FindFirstChild("HumanoidRootPart")
-                if not hum or hum.Health<=0 or not root then continue end
-                local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if Config.VisibleCheck then
-                    if not onS then continue end
-                    if d2>Config.FovRadius then continue end
-                    if not Config.Manipulation then
-                        local lc=player.Character
-                        if lc then
-                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                            if ok and #obs>0 then continue end
-                        end
-                    end
-                else
-                    if not Config.Manipulation then
-                        if not myRoot2 then continue end
-                        local toTarget=(root.Position-myRoot2.Position)
-                        local toFlat=Vector3.new(toTarget.X,0,toTarget.Z)
-                        local camFlat=Vector3.new(camLook.X,0,camLook.Z)
-                        local dot=toFlat.Magnitude>0.01 and camFlat:Dot(toFlat.Unit) or 0
-                        if dot>=0 then continue end
-                        local lc=player.Character
-                        if lc then
-                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                            if ok and #obs>0 then continue end
-                        end
-                    end
-                end
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.TargetPart
-                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                    elseif pn=="Pierna" then pn="LowerTorso"
-                    elseif pn=="Pecho" then pn="UpperTorso"
-                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                    local hp2=char:FindFirstChild(pn) or root
-                    bestPos=hp2.Position
-                end
-            end
-            cachedTargetPos=bestPos
-        else cachedTargetPos=nil end
-
-        if Config.NpcSilentAimEnabled then
-            npcCacheFrame=npcCacheFrame+1
-            if npcCacheFrame>=180 then npcCacheFrame=0; rebuildNpcCache() end
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
-            local myChar3=player.Character
-            for _,hum in ipairs(cachedNpcHumanoids) do
-                if not hum or not hum.Parent then continue end
-                if hum.Health<=0 then continue end
-                local npcRoot=hum.Parent:FindFirstChild("HumanoidRootPart")
-                if not npcRoot then continue end
-                local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
-                if not onS then continue end
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if d2>Config.FovRadius then continue end
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.NpcTargetPart
-                    local part=hum.Parent:FindFirstChild(pn) or npcRoot
-                    local visible=true
-                    if not Config.Manipulation and myChar3 then
-                        local ok,obs=pcall(function()
-                            return camera:GetPartsObscuringTarget({part.Position},{myChar3,hum.Parent})
-                        end)
-                        if ok and #obs>0 then visible=false end
-                    end
-                    npcSilentVisible=visible
-                    if visible or Config.Manipulation then cachedNpcPos=part.Position
-                    else cachedNpcPos=nil end
-                end
-            end
-        else cachedNpcPos=nil; npcSilentVisible=true end
-    end
-
-    -- Stream mode: solo oculta visuals, NO toca los caches (silent aim sigue activo)
     if streamModeOn then
+        -- Limpiar caches: el hookmetamethod checa estas variables.
+        -- Sin esto el silent aim seguiría activo aunque stream mode esté ON.
+        cachedTargetPos=nil; cachedNpcPos=nil
         fovCircle.Visible=false
         snapLineDraw.Visible=false
         for p,obj in pairs(espObjects) do
@@ -1670,6 +1573,116 @@ RunService.RenderStepped:Connect(function()
             -- Mantener la orientación mirando hacia la cámara, sin roll
             ao.CFrame=CFrame.new(root.Position, root.Position+Vector3.new(camCF.LookVector.X,0,camCF.LookVector.Z))
         end
+    end
+
+    -- TARGET CACHE (cada 2 frames)
+    if frame%2==0 then
+        local chars={}
+        for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
+        wallbreakParams.FilterDescendantsInstances=chars
+
+        if Config.SilentAimEnabled then
+            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local bestD=math.huge; local bestPos=nil
+            local myChar2=player.Character
+            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
+            local camLook=camera.CFrame.LookVector
+
+            for _,p in ipairs(Players:GetPlayers()) do
+                if shouldSkip(p) then continue end
+                local char=p.Character; if not char then continue end
+                local hum=char:FindFirstChildOfClass("Humanoid")
+                local root=char:FindFirstChild("HumanoidRootPart")
+                if not hum or hum.Health<=0 or not root then continue end
+
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+
+                -- En stream mode: no hay FOV visible así que no limitar por radio
+                local fovLimit = streamModeOn and math.huge or Config.FovRadius
+
+                if Config.VisibleCheck then
+                    if not onS then continue end
+                    if d2>fovLimit then continue end
+                    if not Config.Manipulation then
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
+                    end
+                else
+                    if not Config.Manipulation then
+                        if not myRoot2 then continue end
+                        local toTarget=(root.Position-myRoot2.Position)
+                        local toFlat=Vector3.new(toTarget.X,0,toTarget.Z)
+                        local camFlat=Vector3.new(camLook.X,0,camLook.Z)
+                        local dot=toFlat.Magnitude>0.01 and camFlat:Dot(toFlat.Unit) or 0
+                        if dot>=0 then continue end
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
+                    end
+                end
+
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.TargetPart
+                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                    elseif pn=="Pierna" then pn="LowerTorso"
+                    elseif pn=="Pecho" then pn="UpperTorso"
+                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                    local hp2=char:FindFirstChild(pn) or root
+                    bestPos=hp2.Position
+                end
+            end
+            cachedTargetPos=bestPos
+        else cachedTargetPos=nil end
+
+        -- NPC Silent Aim target — usa cache, no GetDescendants cada frame
+        if Config.NpcSilentAimEnabled then
+            -- Reconstruir cache de NPCs cada 90 frames
+            npcCacheFrame=npcCacheFrame+1
+            if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
+
+            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
+            local myChar3=player.Character
+
+            for _,hum in ipairs(cachedNpcHumanoids) do
+                if not hum or not hum.Parent then continue end
+                if hum.Health<=0 then continue end
+                local npcRoot=hum.Parent:FindFirstChild("HumanoidRootPart")
+                if not npcRoot then continue end
+                local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
+                if not onS then continue end
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                local npcFovLimit = streamModeOn and math.huge or Config.FovRadius
+                if d2>npcFovLimit then continue end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.NpcTargetPart
+                    local part=hum.Parent:FindFirstChild(pn) or npcRoot
+                    -- Visible check para NPC (similar al de jugadores)
+                    local visible=true
+                    if not Config.Manipulation and myChar3 then
+                        local ok,obs=pcall(function()
+                            return camera:GetPartsObscuringTarget({part.Position},{myChar3,hum.Parent})
+                        end)
+                        if ok and #obs>0 then visible=false end
+                    end
+                    npcSilentVisible=visible
+                    -- Solo asignar la posición si pasa el visible check (o si Manipulation está on)
+                    if visible or Config.Manipulation then
+                        cachedNpcPos=part.Position
+                    else
+                        cachedNpcPos=nil
+                    end
+                end
+            end
+        else cachedNpcPos=nil; npcSilentVisible=true end
     end
 
     local vpSize=camera.ViewportSize
