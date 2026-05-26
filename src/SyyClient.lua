@@ -45,6 +45,8 @@ local DefaultConfig = {
     HealthBgColorR=20,HealthBgColorG=20,HealthBgColorB=20,
     FlyEnabled=false, FlySpeed=50, RageMode=false, InfStamina=false,
     StreamMode=false,
+    TeamCheckEnabled=false,
+    UniversalSAEnabled=false,
     Whitelist={},
 }
 local Config = {}
@@ -60,19 +62,41 @@ end
 local function saveConfig() pcall(function() writefile(CONFIG_FILE,HttpService:JSONEncode(Config)) end) end
 loadConfig()
 
+-- ── WHITELIST — Set O(1) para no iterar la lista entera en cada raycast ──
+local wlSet = {}
+local function rebuildWlSet()
+    wlSet = {}
+    for _,n in ipairs(Config.Whitelist) do wlSet[n:lower()]=true end
+end
+rebuildWlSet()
+
 local function isWhitelisted(p)
-    for _,n in ipairs(Config.Whitelist) do if n:lower()==p.Name:lower() then return true end end; return false
+    return wlSet[p.Name:lower()] == true
 end
 local function addWhitelist(name)
     if name=="" then return false end
-    for _,n in ipairs(Config.Whitelist) do if n:lower()==name:lower() then return false end end
-    table.insert(Config.Whitelist,name); saveConfig(); return true
+    local nl=name:lower()
+    if wlSet[nl] then return false end
+    table.insert(Config.Whitelist,name); wlSet[nl]=true; saveConfig(); return true
 end
 local function removeWhitelist(name)
+    local nl=name:lower()
+    if not wlSet[nl] then return false end
     for i,n in ipairs(Config.Whitelist) do
-        if n:lower()==name:lower() then table.remove(Config.Whitelist,i); saveConfig(); return true end
-    end; return false
+        if n:lower()==nl then table.remove(Config.Whitelist,i); break end
+    end
+    wlSet[nl]=nil; saveConfig(); return true
 end
+
+-- shouldSkip: usado en TODOS los loops de aim/esp para saltar al jugador local,
+-- jugadores en whitelist, y compañeros de equipo (si TeamCheck está ON).
+local function shouldSkip(p)
+    if p==player then return true end
+    if wlSet[p.Name:lower()] then return true end
+    if Config.TeamCheckEnabled and player.Team and player.Team==p.Team then return true end
+    return false
+end
+
 
 -- ══════════════════════════════════════════════════════════════
 -- GUI  —  StreamMode: oculta UI/drawings mientras grabas o transmites.
@@ -627,6 +651,10 @@ makeToggle(pageAim,"Wall Check",       "CamLockWallCheck")
 secLabel(pageAim,"NPC Silent Aim")
 makeToggle(pageAim,"NPC Silent Aim",   "NpcSilentAimEnabled")
 makeDropdown(pageAim,"NPC Part",       "NpcTargetPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
+secLabel(pageAim,"General")
+makeToggle(pageAim,"Team Check",       "TeamCheckEnabled")
+secLabel(pageAim,"Universal Silent Aim")
+makeToggle(pageAim,"Universal SA",     "UniversalSAEnabled")
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS
@@ -916,38 +944,49 @@ do
     infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=infoRow
 end
 
-secLabel(pageSet,"Whitelist")
+secLabel(pageSet,"🔒 Whitelist")
 do
-    local inputRow=Instance.new("Frame")
-    inputRow.Size=UDim2.new(1,0,0,ROW_H); inputRow.BackgroundColor3=C_ROW
-    inputRow.BorderSizePixel=0; inputRow.Parent=pageSet; stroke(inputRow,Color3.fromRGB(0,60,90),1)
+    local WL_ENTRY_H = isMobile and 34 or 26
 
-    local nameBox=Instance.new("TextBox")
-    nameBox.Size=UDim2.new(1,-76,1,-8); nameBox.Position=UDim2.fromOffset(5,4)
-    nameBox.BackgroundColor3=C_DARK; nameBox.BorderSizePixel=0
-    nameBox.Text=""; nameBox.PlaceholderText="Nombre de usuario..."
-    nameBox.PlaceholderColor3=C_DIM; nameBox.TextColor3=C_TEXT
-    nameBox.Font=Enum.Font.GothamMedium; nameBox.TextSize=TXT_SIZE
-    nameBox.ClearTextOnFocus=false; nameBox.Parent=inputRow
-    stroke(nameBox,Color3.fromRGB(0,60,90),1)
+    -- ── Fila: "Jugadores en servidor" + botón Refresh ────────────
+    local headerRow=Instance.new("Frame")
+    headerRow.Size=UDim2.new(1,0,0,WL_ENTRY_H); headerRow.BackgroundColor3=C_ROW
+    headerRow.BorderSizePixel=0; headerRow.Parent=pageSet
+    stroke(headerRow,Color3.fromRGB(0,60,90),1)
+    local hdrLbl=Instance.new("TextLabel")
+    hdrLbl.Size=UDim2.new(1,-84,1,0); hdrLbl.Position=UDim2.fromOffset(8,0)
+    hdrLbl.BackgroundTransparency=1; hdrLbl.Text="Jugadores en servidor"
+    hdrLbl.TextColor3=C_DIM; hdrLbl.Font=Enum.Font.GothamMedium
+    hdrLbl.TextSize=TXT_SIZE; hdrLbl.TextXAlignment=Enum.TextXAlignment.Left; hdrLbl.Parent=headerRow
+    local rfW=isMobile and 74 or 64
+    local refreshBtn=Instance.new("TextButton")
+    refreshBtn.Size=UDim2.fromOffset(rfW,isMobile and 26 or 20)
+    refreshBtn.Position=UDim2.new(1,-(rfW+4),0.5,-(isMobile and 13 or 10))
+    refreshBtn.BackgroundColor3=Color3.fromRGB(0,30,50); refreshBtn.BorderSizePixel=0
+    refreshBtn.Text="🔄 Refresh"; refreshBtn.TextColor3=C_ACCENT
+    refreshBtn.Font=Enum.Font.GothamBold; refreshBtn.TextSize=isMobile and 10 or 9
+    refreshBtn.AutoButtonColor=false; refreshBtn.Parent=headerRow
+    stroke(refreshBtn,C_ACCENT,1)
 
-    local addBtn=Instance.new("TextButton")
-    addBtn.Size=UDim2.fromOffset(62,isMobile and 28 or 22)
-    addBtn.Position=UDim2.new(1,-66,0.5,-(isMobile and 14 or 11))
-    addBtn.BackgroundColor3=Color3.fromRGB(0,30,50); addBtn.BorderSizePixel=0
-    addBtn.Text="+ Add"; addBtn.TextColor3=C_ACCENT
-    addBtn.Font=Enum.Font.GothamBold; addBtn.TextSize=TXT_SIZE
-    addBtn.AutoButtonColor=false; addBtn.Parent=inputRow
-    stroke(addBtn,C_ACCENT,1)
+    -- ── Lista de jugadores del servidor ──────────────────────────
+    local serverListFrame=Instance.new("Frame")
+    serverListFrame.Size=UDim2.new(1,0,0,0); serverListFrame.BackgroundTransparency=1
+    serverListFrame.AutomaticSize=Enum.AutomaticSize.Y; serverListFrame.Parent=pageSet
+    local slLay=Instance.new("UIListLayout"); slLay.SortOrder=Enum.SortOrder.LayoutOrder
+    slLay.Padding=UDim.new(0,2); slLay.Parent=serverListFrame
 
+    -- ── Whitelist guardada ───────────────────────────────────────
+    secLabel(pageSet,"En Whitelist")
     local wlFrame=Instance.new("Frame")
     wlFrame.Size=UDim2.new(1,0,0,0); wlFrame.BackgroundTransparency=1
     wlFrame.AutomaticSize=Enum.AutomaticSize.Y; wlFrame.Parent=pageSet
     local wlLay=Instance.new("UIListLayout"); wlLay.SortOrder=Enum.SortOrder.LayoutOrder
     wlLay.Padding=UDim.new(0,2); wlLay.Parent=wlFrame
 
-    local WL_ENTRY_H = isMobile and 34 or 26
-    local function rebuildWL()
+    -- Forward declarations para que rebuildWL y rebuildServerList se llamen mutuamente
+    local rebuildWL, rebuildServerList
+
+    rebuildWL = function()
         for _,c in ipairs(wlFrame:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
         for _,name in ipairs(Config.Whitelist) do
             local e=Instance.new("Frame")
@@ -958,7 +997,7 @@ do
             nl.BackgroundTransparency=1; nl.Text="✓ "..name
             nl.TextColor3=C_ACCENT; nl.Font=Enum.Font.GothamMedium
             nl.TextSize=TXT_SIZE; nl.TextXAlignment=Enum.TextXAlignment.Left; nl.Parent=e
-            local dbSz = isMobile and 28 or 24
+            local dbSz=isMobile and 28 or 24
             local db=Instance.new("TextButton")
             db.Size=UDim2.fromOffset(dbSz,isMobile and 24 or 18)
             db.Position=UDim2.new(1,-(dbSz+4),0.5,-(isMobile and 12 or 9))
@@ -967,19 +1006,58 @@ do
             db.Font=Enum.Font.GothamBold; db.TextSize=isMobile and 11 or 9
             db.AutoButtonColor=false; db.Parent=e
             stroke(db,Color3.fromRGB(100,20,20),1)
-            db.MouseButton1Click:Connect(function() removeWhitelist(name); rebuildWL() end)
+            db.MouseButton1Click:Connect(function()
+                removeWhitelist(name); rebuildWL(); rebuildServerList()
+            end)
         end
     end
-    rebuildWL()
-    addBtn.MouseButton1Click:Connect(function()
-        local n=nameBox.Text:match("^%s*(.-)%s*$")
-        if addWhitelist(n) then
-            nameBox.Text=""; rebuildWL()
-            addBtn.Text="✅"; task.delay(1,function() addBtn.Text="+ Add" end)
-        else
-            addBtn.Text="Ya existe"; task.delay(1.2,function() addBtn.Text="+ Add" end)
+
+    rebuildServerList = function()
+        for _,c in ipairs(serverListFrame:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p==player then continue end
+            local e=Instance.new("Frame")
+            e.Size=UDim2.new(1,0,0,WL_ENTRY_H); e.BackgroundColor3=C_ROW
+            e.BorderSizePixel=0; e.Parent=serverListFrame; stroke(e,Color3.fromRGB(0,60,90),1)
+            local namLbl=Instance.new("TextLabel")
+            namLbl.Size=UDim2.new(1,-90,1,0); namLbl.Position=UDim2.fromOffset(6,0)
+            namLbl.BackgroundTransparency=1; namLbl.Text=p.Name
+            namLbl.TextColor3=C_TEXT; namLbl.Font=Enum.Font.GothamMedium
+            namLbl.TextSize=TXT_SIZE; namLbl.TextXAlignment=Enum.TextXAlignment.Left; namLbl.Parent=e
+            local togW=isMobile and 76 or 66
+            local togBtn=Instance.new("TextButton")
+            togBtn.Size=UDim2.fromOffset(togW,isMobile and 26 or 20)
+            togBtn.Position=UDim2.new(1,-(togW+4),0.5,-(isMobile and 13 or 10))
+            togBtn.BorderSizePixel=0; togBtn.AutoButtonColor=false; togBtn.Parent=e
+            togBtn.Font=Enum.Font.GothamBold; togBtn.TextSize=isMobile and 10 or 9
+            local function refreshTogBtn()
+                if isWhitelisted(p) then
+                    togBtn.BackgroundColor3=Color3.fromRGB(40,8,8)
+                    togBtn.TextColor3=Color3.fromRGB(255,80,80); togBtn.Text="✕ Quitar"
+                    stroke(togBtn,Color3.fromRGB(100,20,20),1)
+                else
+                    togBtn.BackgroundColor3=Color3.fromRGB(0,30,50)
+                    togBtn.TextColor3=C_ACCENT; togBtn.Text="+ Añadir"
+                    stroke(togBtn,C_ACCENT,1)
+                end
+            end
+            refreshTogBtn()
+            togBtn.MouseButton1Click:Connect(function()
+                if isWhitelisted(p) then removeWhitelist(p.Name) else addWhitelist(p.Name) end
+                refreshTogBtn(); rebuildWL()
+            end)
         end
+    end
+
+    rebuildServerList(); rebuildWL()
+
+    refreshBtn.MouseButton1Click:Connect(function()
+        rebuildServerList()
+        refreshBtn.Text="✅"; task.delay(0.8,function() refreshBtn.Text="🔄 Refresh" end)
     end)
+    -- Auto-actualizar al entrar/salir jugadores del servidor
+    Players.PlayerAdded:Connect(function() rebuildServerList() end)
+    Players.PlayerRemoving:Connect(function() task.wait(0.05); rebuildServerList() end)
 end
 
 secLabel(pageSet,"Config")
@@ -1003,7 +1081,7 @@ do
     rstBtn.TextSize=TXT_SIZE; rstBtn.AutoButtonColor=false; rstBtn.Parent=pageSet
     stroke(rstBtn,Color3.fromRGB(120,30,30),1)
     rstBtn.MouseButton1Click:Connect(function()
-        Config=deepCopy(DefaultConfig); saveConfig()
+        Config=deepCopy(DefaultConfig); saveConfig(); rebuildWlSet()
         rstBtn.Text="✅  Reseteado"; task.delay(2,function() rstBtn.Text="🔄  Resetear Config" end)
     end)
 end
@@ -1344,15 +1422,46 @@ pcall(function()
     local oldNC
     oldNC=hookmetamethod(game,"__namecall",newcclosure(function(...)
         local method=getnamecallmethod()
-        -- Determinar qué posición usar (player o NPC)
+
+        -- ── STREAM MODE: no intervenir nada ──────────────────────────
+        if streamModeOn then return oldNC(...) end
+
+        -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
+        -- Cubre juegos que mandan daño por remotes en vez de solo raycasts.
+        -- Reemplaza Vector3 que parecen posiciones de hit (> 2 studs de magnitud,
+        -- entre 5 y 2000 studs del jugador).
+        if Config.UniversalSAEnabled and not checkcaller()
+           and (method=="FireServer" or method=="InvokeServer") then
+            local usePos2=nil
+            if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
+            if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
+            if usePos2 and math.random(100)<=Config.HitChance then
+                local args={...}
+                local myC=player.Character
+                local myR=myC and myC:FindFirstChild("HumanoidRootPart")
+                local replaced=false
+                for i=2,math.min(#args,8) do
+                    if typeof(args[i])=="Vector3" then
+                        local v=args[i]
+                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
+                        if v.Magnitude>2 then
+                            if myR then
+                                local d=(v-myR.Position).Magnitude
+                                if d>5 and d<2000 then args[i]=usePos2; replaced=true end
+                            end
+                        end
+                    end
+                end
+                if replaced then return oldNC(table.unpack(args)) end
+            end
+        end
+
+        -- ── RAYCAST SILENT AIM ───────────────────────────────────────
         local usePos=nil
         if Config.SilentAimEnabled and cachedTargetPos then usePos=cachedTargetPos end
         if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos then usePos=cachedNpcPos end
         if not usePos then return oldNC(...) end
         if checkcaller() then return oldNC(...) end
-        -- HitChance REAL: cada bala individual tiene X% de probabilidad de desviarse
-        -- math.random genera un número entre 1-100 para CADA llamada al raycast
-        -- Si HitChance=70, 70% de los rays se redirigen, 30% pasan normales
         if math.random(100)>Config.HitChance then return oldNC(...) end
         local args={...}
         if args[1]~=Workspace then return oldNC(...) end
@@ -1383,58 +1492,42 @@ end)
 local camLockTarget=nil   -- root del objetivo actualmente bloqueado
 
 RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
-    if not Config.CamLockEnabled then camLockTarget=nil; return end
+    if not Config.CamLockEnabled or streamModeOn then camLockTarget=nil; return end
 
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-    -- ── Buscar objetivo válido más cercano ──────────────────────
     local bestRoot=nil
     local bestDist=math.huge
 
     for _,p in ipairs(Players:GetPlayers()) do
-        if p==player or isWhitelisted(p) then continue end
+        if shouldSkip(p) then continue end
         local char=p.Character; if not char then continue end
         local hum=char:FindFirstChildOfClass("Humanoid")
         local root=char:FindFirstChild("HumanoidRootPart")
-
-        -- Kill check
         if not hum or hum.Health<=0 or not root then continue end
-
-        -- Rango de detección 3D
         local dist3D=myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
         if dist3D>Config.CamLockRange then continue end
-
-        -- Wall check
         if Config.CamLockWallCheck and myChar then
             local ok,obs=pcall(function()
                 return camera:GetPartsObscuringTarget({root.Position},{myChar,char})
             end)
             if ok and #obs>0 then continue end
         end
-
         if dist3D<bestDist then bestDist=dist3D; bestRoot=root end
     end
 
     camLockTarget=bestRoot
     if not bestRoot then return end
 
-    -- ── Rotar cámara hacia el objetivo ─────────────────────────
-    -- Mantenemos la POSICIÓN que calculó el script nativo (tercera persona),
-    -- solo sobreescribimos la ORIENTACIÓN.
     local camPos=camera.CFrame.Position
-    local targetPos=Vector3.new(
-        bestRoot.Position.X,
-        bestRoot.Position.Y+1.5,   -- apunta al torso, no a los pies
-        bestRoot.Position.Z
-    )
+    local targetPos=Vector3.new(bestRoot.Position.X,bestRoot.Position.Y+1.5,bestRoot.Position.Z)
     local rawDir=targetPos-camPos
     if rawDir.Magnitude<0.1 then return end
-
     local strength=math.clamp(Config.CamLockStrength,1,20)*0.012
-    local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit, strength)
+    local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit,strength)
     if newLook.Magnitude>0.01 then
-        camera.CFrame=CFrame.lookAt(camPos, camPos+newLook.Unit)
+        camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
     end
 end)
 
@@ -1443,6 +1536,102 @@ end)
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
+
+    -- TARGET CACHE corre SIEMPRE, incluso en stream mode,
+    -- para que el silent aim siga funcionando aunque los visuals estén ocultos.
+    if frame%2==0 then
+        local chars={}
+        for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
+        wallbreakParams.FilterDescendantsInstances=chars
+
+        if Config.SilentAimEnabled then
+            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local bestD=math.huge; local bestPos=nil
+            local myChar2=player.Character
+            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
+            local camLook=camera.CFrame.LookVector
+            for _,p in ipairs(Players:GetPlayers()) do
+                if shouldSkip(p) then continue end
+                local char=p.Character; if not char then continue end
+                local hum=char:FindFirstChildOfClass("Humanoid")
+                local root=char:FindFirstChild("HumanoidRootPart")
+                if not hum or hum.Health<=0 or not root then continue end
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                if Config.VisibleCheck then
+                    if not onS then continue end
+                    if d2>Config.FovRadius then continue end
+                    if not Config.Manipulation then
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
+                    end
+                else
+                    if not Config.Manipulation then
+                        if not myRoot2 then continue end
+                        local toTarget=(root.Position-myRoot2.Position)
+                        local toFlat=Vector3.new(toTarget.X,0,toTarget.Z)
+                        local camFlat=Vector3.new(camLook.X,0,camLook.Z)
+                        local dot=toFlat.Magnitude>0.01 and camFlat:Dot(toFlat.Unit) or 0
+                        if dot>=0 then continue end
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
+                    end
+                end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.TargetPart
+                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                    elseif pn=="Pierna" then pn="LowerTorso"
+                    elseif pn=="Pecho" then pn="UpperTorso"
+                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                    local hp2=char:FindFirstChild(pn) or root
+                    bestPos=hp2.Position
+                end
+            end
+            cachedTargetPos=bestPos
+        else cachedTargetPos=nil end
+
+        if Config.NpcSilentAimEnabled then
+            npcCacheFrame=npcCacheFrame+1
+            if npcCacheFrame>=180 then npcCacheFrame=0; rebuildNpcCache() end
+            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
+            local myChar3=player.Character
+            for _,hum in ipairs(cachedNpcHumanoids) do
+                if not hum or not hum.Parent then continue end
+                if hum.Health<=0 then continue end
+                local npcRoot=hum.Parent:FindFirstChild("HumanoidRootPart")
+                if not npcRoot then continue end
+                local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
+                if not onS then continue end
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                if d2>Config.FovRadius then continue end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.NpcTargetPart
+                    local part=hum.Parent:FindFirstChild(pn) or npcRoot
+                    local visible=true
+                    if not Config.Manipulation and myChar3 then
+                        local ok,obs=pcall(function()
+                            return camera:GetPartsObscuringTarget({part.Position},{myChar3,hum.Parent})
+                        end)
+                        if ok and #obs>0 then visible=false end
+                    end
+                    npcSilentVisible=visible
+                    if visible or Config.Manipulation then cachedNpcPos=part.Position
+                    else cachedNpcPos=nil end
+                end
+            end
+        else cachedNpcPos=nil; npcSilentVisible=true end
+    end
+
+    -- Stream mode: solo oculta visuals, NO toca los caches (silent aim sigue activo)
     if streamModeOn then
         fovCircle.Visible=false
         snapLineDraw.Visible=false
@@ -1483,112 +1672,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- TARGET CACHE (cada 2 frames)
-    if frame%2==0 then
-        local chars={}
-        for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
-        wallbreakParams.FilterDescendantsInstances=chars
-
-        if Config.SilentAimEnabled then
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; local bestPos=nil
-            local myChar2=player.Character
-            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
-            local camLook=camera.CFrame.LookVector
-
-            for _,p in ipairs(Players:GetPlayers()) do
-                if p==player or isWhitelisted(p) then continue end
-                local char=p.Character; if not char then continue end
-                local hum=char:FindFirstChildOfClass("Humanoid")
-                local root=char:FindFirstChild("HumanoidRootPart")
-                if not hum or hum.Health<=0 or not root then continue end
-
-                local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-
-                if Config.VisibleCheck then
-                    if not onS then continue end
-                    if d2>Config.FovRadius then continue end
-                    if not Config.Manipulation then
-                        local lc=player.Character
-                        if lc then
-                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                            if ok and #obs>0 then continue end
-                        end
-                    end
-                else
-                    if not Config.Manipulation then
-                        if not myRoot2 then continue end
-                        local toTarget=(root.Position-myRoot2.Position)
-                        local toFlat=Vector3.new(toTarget.X,0,toTarget.Z)
-                        local camFlat=Vector3.new(camLook.X,0,camLook.Z)
-                        local dot=toFlat.Magnitude>0.01 and camFlat:Dot(toFlat.Unit) or 0
-                        if dot>=0 then continue end
-                        local lc=player.Character
-                        if lc then
-                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
-                            if ok and #obs>0 then continue end
-                        end
-                    end
-                end
-
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.TargetPart
-                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                    elseif pn=="Pierna" then pn="LowerTorso"
-                    elseif pn=="Pecho" then pn="UpperTorso"
-                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                    local hp2=char:FindFirstChild(pn) or root
-                    bestPos=hp2.Position
-                end
-            end
-            cachedTargetPos=bestPos
-        else cachedTargetPos=nil end
-
-        -- NPC Silent Aim target — usa cache, no GetDescendants cada frame
-        if Config.NpcSilentAimEnabled then
-            -- Reconstruir cache de NPCs cada 90 frames
-            npcCacheFrame=npcCacheFrame+1
-            if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
-
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
-            local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
-            local myChar3=player.Character
-
-            for _,hum in ipairs(cachedNpcHumanoids) do
-                if not hum or not hum.Parent then continue end
-                if hum.Health<=0 then continue end
-                local npcRoot=hum.Parent:FindFirstChild("HumanoidRootPart")
-                if not npcRoot then continue end
-                local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
-                if not onS then continue end
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                if d2>Config.FovRadius then continue end
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.NpcTargetPart
-                    local part=hum.Parent:FindFirstChild(pn) or npcRoot
-                    -- Visible check para NPC (similar al de jugadores)
-                    local visible=true
-                    if not Config.Manipulation and myChar3 then
-                        local ok,obs=pcall(function()
-                            return camera:GetPartsObscuringTarget({part.Position},{myChar3,hum.Parent})
-                        end)
-                        if ok and #obs>0 then visible=false end
-                    end
-                    npcSilentVisible=visible
-                    -- Solo asignar la posición si pasa el visible check (o si Manipulation está on)
-                    if visible or Config.Manipulation then
-                        cachedNpcPos=part.Position
-                    else
-                        cachedNpcPos=nil
-                    end
-                end
-            end
-        else cachedNpcPos=nil; npcSilentVisible=true end
-    end
-
     local vpSize=camera.ViewportSize
     local center2D=Vector2.new(vpSize.X/2,vpSize.Y/2)
     local myChar=player.Character
@@ -1617,7 +1700,7 @@ RunService.RenderStepped:Connect(function()
             -- Buscar jugador en FOV sin necesitar silent aim
             local bestD3=math.huge
             for _,p in ipairs(Players:GetPlayers()) do
-                if p==player or isWhitelisted(p) then continue end
+                if shouldSkip(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
                 local root=char:FindFirstChild("HumanoidRootPart")
