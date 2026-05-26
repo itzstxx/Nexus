@@ -238,10 +238,38 @@ titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
 local subLbl=Instance.new("TextLabel")
 subLbl.Size=UDim2.new(1,-110,0,13)
 subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 34 or 27)
-subLbl.BackgroundTransparency=1; subLbl.Text="V1  ·  EnanoTop1 (stx)  ·  "..player.Name
+subLbl.BackgroundTransparency=1
+subLbl.Text="EnanoTop1 (stx)  ·  "..player.Name
 subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
+
+-- Avatar del jugador en el lado derecho del header (antes del botón X)
+local avatarSz = isMobile and 38 or 32
+local avatarImg = Instance.new("ImageLabel")
+avatarImg.Size = UDim2.fromOffset(avatarSz, avatarSz)
+avatarImg.Position = UDim2.new(1, -(closeBtnSz + avatarSz + 10), 0.5, -(avatarSz/2))
+avatarImg.BackgroundColor3 = C_DARK
+avatarImg.BorderSizePixel = 0
+avatarImg.Image = "rbxthumb://type=AvatarHeadShot&id="..player.UserId.."&w=150&h=150"
+avatarImg.ScaleType = Enum.ScaleType.Fit
+avatarImg.Parent = header
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(1, 0)
+avatarCorner.Parent = avatarImg
+stroke(avatarImg, C_ACCENT, 1)
+
+-- Nombre del jugador debajo del avatar
+local avatarNameLbl = Instance.new("TextLabel")
+avatarNameLbl.Size = UDim2.fromOffset(avatarSz + 20, 11)
+avatarNameLbl.Position = UDim2.new(1, -(closeBtnSz + avatarSz + 20), 1, -11)
+avatarNameLbl.BackgroundTransparency = 1
+avatarNameLbl.Text = player.Name
+avatarNameLbl.TextColor3 = C_ACCENT
+avatarNameLbl.Font = Enum.Font.GothamBold
+avatarNameLbl.TextSize = 8
+avatarNameLbl.TextXAlignment = Enum.TextXAlignment.Center
+avatarNameLbl.Parent = header
 
 -- botón X — más grande en móvil
 local closeBtnSz = isMobile and 42 or 34
@@ -1418,6 +1446,25 @@ local wallbreakParams=RaycastParams.new()
 wallbreakParams.FilterType=Enum.RaycastFilterType.Include
 wallbreakParams.FilterDescendantsInstances={}
 
+-- Tabla de validación de argumentos por método (igual que Universal Silent Aim)
+local ExpectedRayArgs = {
+    FindPartOnRayWithIgnoreList = { ArgCountRequired=3, Args={"Instance","Ray","table","boolean","boolean"} },
+    FindPartOnRayWithWhitelist  = { ArgCountRequired=3, Args={"Instance","Ray","table","boolean"} },
+    FindPartOnRay               = { ArgCountRequired=2, Args={"Instance","Ray","Instance","boolean","boolean"} },
+    Raycast                     = { ArgCountRequired=3, Args={"Instance","Vector3","Vector3","RaycastParams"} },
+}
+local function validateRayArgs(args, def)
+    if #args < def.ArgCountRequired then return false end
+    local matches=0
+    for i,arg in ipairs(args) do
+        if def.Args[i] and typeof(arg)==def.Args[i] then matches=matches+1 end
+    end
+    return matches >= def.ArgCountRequired
+end
+local function getDirection(origin, target)
+    return (target - origin).Unit * 1000
+end
+
 pcall(function()
     local oldNC
     oldNC=hookmetamethod(game,"__namecall",newcclosure(function(...)
@@ -1426,16 +1473,17 @@ pcall(function()
         -- ── STREAM MODE: no intervenir nada ──────────────────────────
         if streamModeOn then return oldNC(...) end
 
+        -- ── HIT CHANCE GLOBAL ─────────────────────────────────────────
+        -- Se evalúa UNA sola vez por llamada para que sea consistente
+        local chanceRoll = math.random(100)
+
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
-        -- Cubre juegos que mandan daño por remotes en vez de solo raycasts.
-        -- Reemplaza Vector3 que parecen posiciones de hit (> 2 studs de magnitud,
-        -- entre 5 y 2000 studs del jugador).
         if Config.UniversalSAEnabled and not checkcaller()
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
             if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
             if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
-            if usePos2 and math.random(100)<=Config.HitChance then
+            if usePos2 and chanceRoll<=Config.HitChance then
                 local args={...}
                 local myC=player.Character
                 local myR=myC and myC:FindFirstChild("HumanoidRootPart")
@@ -1443,7 +1491,6 @@ pcall(function()
                 for i=2,math.min(#args,8) do
                     if typeof(args[i])=="Vector3" then
                         local v=args[i]
-                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
                         if v.Magnitude>2 then
                             if myR then
                                 local d=(v-myR.Position).Magnitude
@@ -1457,26 +1504,68 @@ pcall(function()
         end
 
         -- ── RAYCAST SILENT AIM ───────────────────────────────────────
+        if checkcaller() then return oldNC(...) end
         local usePos=nil
         if Config.SilentAimEnabled and cachedTargetPos then usePos=cachedTargetPos end
         if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos then usePos=cachedNpcPos end
         if not usePos then return oldNC(...) end
-        if checkcaller() then return oldNC(...) end
-        if math.random(100)>Config.HitChance then return oldNC(...) end
+        if chanceRoll>Config.HitChance then return oldNC(...) end
+
         local args={...}
         if args[1]~=Workspace then return oldNC(...) end
+
         if method=="Raycast" then
-            if typeof(args[2])~="Vector3" or typeof(args[3])~="Vector3" then return oldNC(...) end
-            args[3]=(usePos-args[2]).Unit*1000
+            local def=ExpectedRayArgs.Raycast
+            if not validateRayArgs(args, def) then return oldNC(...) end
+            local origin=args[2]
+            args[3]=getDirection(origin, usePos)
             if Config.Manipulation then args[4]=wallbreakParams end
             return oldNC(table.unpack(args))
-        elseif method=="FindPartOnRayWithIgnoreList" or method=="FindPartOnRay" then
-            if typeof(args[2])~="Ray" then return oldNC(...) end
-            local o=args[2].Origin; args[2]=Ray.new(o,(usePos-o).Unit*1000)
-            if Config.Manipulation and method=="FindPartOnRayWithIgnoreList" then args[3]={} end
+
+        elseif method=="FindPartOnRayWithIgnoreList" then
+            local def=ExpectedRayArgs.FindPartOnRayWithIgnoreList
+            if not validateRayArgs(args, def) then return oldNC(...) end
+            local origin=args[2].Origin
+            args[2]=Ray.new(origin, getDirection(origin, usePos))
+            if Config.Manipulation then args[3]={} end
+            return oldNC(table.unpack(args))
+
+        elseif method=="FindPartOnRayWithWhitelist" then
+            local def=ExpectedRayArgs.FindPartOnRayWithWhitelist
+            if not validateRayArgs(args, def) then return oldNC(...) end
+            local origin=args[2].Origin
+            args[2]=Ray.new(origin, getDirection(origin, usePos))
+            return oldNC(table.unpack(args))
+
+        elseif method=="FindPartOnRay" or method=="findPartOnRay" then
+            local def=ExpectedRayArgs.FindPartOnRay
+            if not validateRayArgs(args, def) then return oldNC(...) end
+            local origin=args[2].Origin
+            args[2]=Ray.new(origin, getDirection(origin, usePos))
             return oldNC(table.unpack(args))
         end
+
         return oldNC(...)
+    end))
+end)
+
+-- ── __index hook para Mouse.Hit / Mouse.Target ────────────────
+pcall(function()
+    local Mouse = player:GetMouse()
+    local oldIndex
+    oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, index)
+        if self == Mouse and not checkcaller()
+           and Config.SilentAimEnabled and cachedTargetPos then
+            local usePos = cachedTargetPos
+            if index == "Hit" or index == "hit" then
+                return CFrame.new(usePos)
+            elseif index == "Target" or index == "target" then
+                -- devolver la parte más cercana a cachedTargetPos
+                local res = Workspace:FindPartOnRay(Ray.new(camera.CFrame.Position,(usePos-camera.CFrame.Position).Unit*1000))
+                return res
+            end
+        end
+        return oldIndex(self, index)
     end))
 end)
 
