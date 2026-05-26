@@ -1819,7 +1819,7 @@ end)
 print("[SYY V2] Loaded — "..player.Name)
 
 task.defer(function()
-    if Config.StreamMode then
+    if Config.StreamMode the
         streamModeOn=false
         applyStreamMode(true)
     end
