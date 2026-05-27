@@ -1848,7 +1848,7 @@ RunService.RenderStepped:Connect(function()
     if not snapTargetP then snapLineDraw.Visible=false end
 end)
 
-print("[SYY V2] Loaded — "..player.Name)
+print("[SYY toop] Loaded — "..player.Name)
 
 task.defer(function()
     if Config.StreamMode then
