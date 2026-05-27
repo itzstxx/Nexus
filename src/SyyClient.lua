@@ -1542,8 +1542,6 @@ pcall(function()
         local method=getnamecallmethod()
 
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
-        -- En stream mode se salta (no queremos intervenir remotes), pero
-        -- el raycast silent aim sigue activo siempre.
         if Config.UniversalSAEnabled and not checkcaller() and not streamModeOn
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
@@ -1551,22 +1549,27 @@ pcall(function()
             if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
             if usePos2 and math.random(100)<=Config.HitChance then
                 local args={...}
-                local myC=player.Character
-                local myR=myC and myC:FindFirstChild("HumanoidRootPart")
-                local replaced=false
-                for i=2,math.min(#args,8) do
-                    if typeof(args[i])=="Vector3" then
+                -- Mínimo 2 args (remote + al menos 1 param)
+                if #args >= 2 then
+                    local myC=player.Character
+                    local myR=myC and myC:FindFirstChild("HumanoidRootPart")
+                    local replaced=false
+                    for i=2,math.min(#args,8) do
+                        -- Solo reemplazar Vector3 que sean posiciones válidas (no nil, no dirección ~1)
                         local v=args[i]
-                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
-                        if v.Magnitude>2 then
+                        if typeof(v)=="Vector3" and v.Magnitude>2 and v.Magnitude<1e6 then
                             if myR then
                                 local d=(v-myR.Position).Magnitude
-                                if d>5 and d<2000 then args[i]=usePos2; replaced=true end
+                                -- Entre 5 y 1500 studs = posición de hit válida
+                                if d>5 and d<1500 then
+                                    args[i]=usePos2; replaced=true
+                                    break -- solo reemplazar el primer Vector3 válido
+                                end
                             end
                         end
                     end
+                    if replaced then return oldNC(table.unpack(args)) end
                 end
-                if replaced then return oldNC(table.unpack(args)) end
             end
         end
 
