@@ -1507,7 +1507,7 @@ end)
 local camLockTarget=nil   -- root del objetivo actualmente bloqueado
 
 RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
-    if not Config.CamLockEnabled or streamModeOn then camLockTarget=nil; return end
+    if not Config.CamLockEnabled then camLockTarget=nil; return end
 
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -1569,53 +1569,10 @@ end
 local frame=0
 RunService.RenderStepped:Connect(function()
     frame=frame+1
-    if streamModeOn then
-        -- Limpiar caches: el hookmetamethod checa estas variables.
-        -- Sin esto el silent aim seguiría activo aunque stream mode esté ON.
-        cachedTargetPos=nil; cachedNpcPos=nil
-        fovCircle.Visible=false
-        snapLineDraw.Visible=false
-        for p,obj in pairs(espObjects) do
-            obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
-            obj.healthBar.Visible=false; obj.healthBg.Visible=false
-            for _,l in ipairs(obj.skeleton) do l.Visible=false end
-            if itemDrawings[p] then itemDrawings[p].Visible=false end
-        end
-        return
-    end
 
-    -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
-    if frame%6==0 then _refreshColors() end
-
-    -- FLY
-    if Config.FlyEnabled~=flyActive then
-        if Config.FlyEnabled then startFly() else stopFly() end
-    end
-    if Config.FlyEnabled and flyActive then
-        local char=player.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
-        local lv=root and root:FindFirstChild("SyyFlyLV")
-        local ao=root and root:FindFirstChild("SyyFlyAO")
-        if lv and ao then
-            local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv=mv-camCF.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv=mv+camCF.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv=mv+Vector3.yAxis end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.E) then mv=mv-Vector3.yAxis end
-            local hum2=char:FindFirstChildOfClass("Humanoid")
-            if hum2 and hum2.MoveDirection.Magnitude>0.1 then
-                local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
-                if wf.Magnitude>0.01 then mv=mv+wf.Unit end
-            end
-            lv.VectorVelocity = mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
-            -- Mantener la orientación mirando hacia la cámara, sin roll
-            ao.CFrame=CFrame.new(root.Position, root.Position+Vector3.new(camCF.LookVector.X,0,camCF.LookVector.Z))
-        end
-    end
-
-    -- TARGET CACHE (cada 2 frames)
+    -- ══ TARGET CACHE — corre SIEMPRE, incluso con stream mode ON ══
+    -- El hookmetamethod lee cachedTargetPos en cada raycast.
+    -- Si limpiamos el cache aquí, el silent aim no funciona.
     if frame%2==0 then
         local chars={}
         for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
@@ -1637,8 +1594,7 @@ RunService.RenderStepped:Connect(function()
 
                 local sp2,onS=camera:WorldToViewportPoint(root.Position)
                 local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-
-                -- En stream mode: no hay FOV visible así que no limitar por radio
+                -- En stream mode no hay FOV visible: sin límite de radio
                 local fovLimit = streamModeOn and math.huge or Config.FovRadius
 
                 if Config.VisibleCheck then
@@ -1681,16 +1637,13 @@ RunService.RenderStepped:Connect(function()
             cachedTargetPos=bestPos
         else cachedTargetPos=nil end
 
-        -- NPC Silent Aim target — usa cache, no GetDescendants cada frame
         if Config.NpcSilentAimEnabled then
-            -- Reconstruir cache de NPCs cada 90 frames
             npcCacheFrame=npcCacheFrame+1
             if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
-
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
             local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
             local myChar3=player.Character
-
+            local npcFovLimit = streamModeOn and math.huge or Config.FovRadius
             for _,hum in ipairs(cachedNpcHumanoids) do
                 if not hum or not hum.Parent then continue end
                 if hum.Health<=0 then continue end
@@ -1699,13 +1652,11 @@ RunService.RenderStepped:Connect(function()
                 local sp2,onS=camera:WorldToViewportPoint(npcRoot.Position)
                 if not onS then continue end
                 local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                local npcFovLimit = streamModeOn and math.huge or Config.FovRadius
                 if d2>npcFovLimit then continue end
                 if d2<bestD then
                     bestD=d2
                     local pn=Config.NpcTargetPart
                     local part=hum.Parent:FindFirstChild(pn) or npcRoot
-                    -- Visible check para NPC (similar al de jugadores)
                     local visible=true
                     if not Config.Manipulation and myChar3 then
                         local ok,obs=pcall(function()
@@ -1714,15 +1665,56 @@ RunService.RenderStepped:Connect(function()
                         if ok and #obs>0 then visible=false end
                     end
                     npcSilentVisible=visible
-                    -- Solo asignar la posición si pasa el visible check (o si Manipulation está on)
-                    if visible or Config.Manipulation then
-                        cachedNpcPos=part.Position
-                    else
-                        cachedNpcPos=nil
-                    end
+                    if visible or Config.Manipulation then cachedNpcPos=part.Position
+                    else cachedNpcPos=nil end
                 end
             end
         else cachedNpcPos=nil; npcSilentVisible=true end
+    end
+
+    -- ══ STREAM MODE — solo ocultar visuals, hacks siguen activos ══
+    -- Silent Aim, CamLock, TriggerBot, Fly, InfStamina = ON siempre.
+    -- Solo se ocultan ESP, FOV circle, Snapline y el panel GUI.
+    if streamModeOn then
+        fovCircle.Visible=false
+        snapLineDraw.Visible=false
+        for p,obj in pairs(espObjects) do
+            obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
+            obj.healthBar.Visible=false; obj.healthBg.Visible=false
+            for _,l in ipairs(obj.skeleton) do l.Visible=false end
+            if itemDrawings[p] then itemDrawings[p].Visible=false end
+        end
+        return
+    end
+
+    -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
+    if frame%6==0 then _refreshColors() end
+
+    -- FLY
+    if Config.FlyEnabled~=flyActive then
+        if Config.FlyEnabled then startFly() else stopFly() end
+    end
+    if Config.FlyEnabled and flyActive then
+        local char=player.Character
+        local root=char and char:FindFirstChild("HumanoidRootPart")
+        local lv=root and root:FindFirstChild("SyyFlyLV")
+        local ao=root and root:FindFirstChild("SyyFlyAO")
+        if lv and ao then
+            local sp=Config.FlySpeed; local camCF=camera.CFrame; local mv=Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv=mv+camCF.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv=mv-camCF.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv=mv-camCF.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv=mv+camCF.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv=mv+Vector3.yAxis end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.E) then mv=mv-Vector3.yAxis end
+            local hum2=char:FindFirstChildOfClass("Humanoid")
+            if hum2 and hum2.MoveDirection.Magnitude>0.1 then
+                local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
+                if wf.Magnitude>0.01 then mv=mv+wf.Unit end
+            end
+            lv.VectorVelocity = mv.Magnitude>0 and mv.Unit*sp or Vector3.zero
+            ao.CFrame=CFrame.new(root.Position, root.Position+Vector3.new(camCF.LookVector.X,0,camCF.LookVector.Z))
+        end
     end
 
     local vpSize=camera.ViewportSize
