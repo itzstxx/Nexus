@@ -47,14 +47,6 @@ local DefaultConfig = {
     StreamMode=false,
     TeamCheckEnabled=false,
     UniversalSAEnabled=false,
-    -- Render Optimizer: mejora FPS eliminando efectos visuales de Roblox
-    RenderOptEnabled=false,
-    RenderQuality=1,       -- 1=mínima calidad (máx FPS), 21=calidad normal
-    RenderShadows=false,   -- sombras ON/OFF
-    RenderTextures=false,  -- texturas ON/OFF
-    RenderParticles=false, -- partículas, humo, fuego ON/OFF
-    RenderPostFX=false,    -- post-process (bloom, blur, etc.) ON/OFF
-    RenderGrass=false,     -- hierba ON/OFF
     Whitelist={},
 }
 local Config = {}
@@ -297,12 +289,12 @@ tabBarLine.BackgroundColor3=C_ACCENT; tabBarLine.BorderSizePixel=0; tabBarLine.P
 
 -- indicador deslizante de tab activo
 local tabIndicator=Instance.new("Frame")
-tabIndicator.Size=UDim2.new(1/5,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
+tabIndicator.Size=UDim2.new(1/4,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
 tabIndicator.BackgroundColor3=C_ACCENT; tabIndicator.BorderSizePixel=0; tabIndicator.ZIndex=3; tabIndicator.Parent=tabBar
 
 local contentY=headerH+tabBarH+2
 local contentH=panelH-contentY-6
-local tabNames={"Aim","Vis","Ext","Cfg","SLR"}
+local tabNames={"Aimbot","Visuals","Extras","Settings"}
 local tabBtns={}; local tabPages={}
 
 local function makeTabPage()
@@ -971,97 +963,6 @@ do
     infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=infoRow
 end
 
--- ── RENDER OPTIMIZER ────────────────────────────────────────
-secLabel(pageSet,"⚡ Render Optimizer (+ FPS)")
-
-local function applyRenderOpt(on)
-    local lighting=game:GetService("Lighting")
-    pcall(function()
-        -- Calidad de render
-        pcall(function()
-            if on then
-                settings().Rendering.QualityLevel=Enum.QualityLevel.Level01
-            else
-                local lvl="Level"..string.format("%02d",math.clamp(Config.RenderQuality,1,21))
-                settings().Rendering.QualityLevel=Enum.QualityLevel[lvl]
-            end
-        end)
-        -- Sombras
-        pcall(function() lighting.GlobalShadows = not on or Config.RenderShadows end)
-        -- Post-process
-        pcall(function()
-            for _,fx in ipairs(lighting:GetChildren()) do
-                if fx:IsA("PostEffect") then fx.Enabled = not on or Config.RenderPostFX end
-            end
-        end)
-        -- Partículas
-        pcall(function()
-            for _,obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
-                or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                    obj.Enabled = not on or Config.RenderParticles
-                end
-            end
-        end)
-        -- Terreno
-        pcall(function()
-            local terrain=Workspace:FindFirstChildOfClass("Terrain")
-            if terrain then
-                if on then terrain.WaterWaveSize=0; terrain.WaterWaveSpeed=0
-                else terrain.WaterWaveSize=0.15; terrain.WaterWaveSpeed=10 end
-            end
-        end)
-        pcall(function() Workspace.TerrainDetail = on and 0 or 4 end)
-    end)
-end
-
-makeToggle(pageSet,"⚡ Render Opt","RenderOptEnabled",function(on)
-    applyRenderOpt(on)
-end)
-makeSlider(pageSet,"Calidad (1=max FPS)","RenderQuality",1,21,function(v)
-    if Config.RenderOptEnabled then
-        pcall(function()
-            local lvl="Level"..string.format("%02d",math.clamp(v,1,21))
-            settings().Rendering.QualityLevel=Enum.QualityLevel[lvl]
-        end)
-    end
-end)
-makeToggle(pageSet,"Sombras","RenderShadows",function(v)
-    if Config.RenderOptEnabled then
-        pcall(function() game:GetService("Lighting").GlobalShadows=v end)
-    end
-end)
-makeToggle(pageSet,"Post-FX (Bloom/Blur)","RenderPostFX",function(v)
-    if Config.RenderOptEnabled then
-        for _,fx in ipairs(game:GetService("Lighting"):GetChildren()) do
-            if fx:IsA("PostEffect") then fx.Enabled=v end
-        end
-    end
-end)
-makeToggle(pageSet,"Partículas/Fuego","RenderParticles",function(v)
-    if Config.RenderOptEnabled then
-        for _,obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
-            or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled=v end
-        end
-    end
-end)
-
--- Botón: aplicar ahora
-do
-    local applyBtn=Instance.new("TextButton")
-    applyBtn.Size=UDim2.new(1,0,0,ROW_H); applyBtn.BackgroundColor3=Color3.fromRGB(0,35,15)
-    applyBtn.BorderSizePixel=0; applyBtn.Text="⚡ Aplicar Render Ahora"
-    applyBtn.TextColor3=Color3.fromRGB(80,255,140); applyBtn.Font=Enum.Font.GothamBold
-    applyBtn.TextSize=TXT_SIZE; applyBtn.AutoButtonColor=false; applyBtn.Parent=pageSet
-    stroke(applyBtn,Color3.fromRGB(0,160,80),1)
-    applyBtn.MouseButton1Click:Connect(function()
-        applyRenderOpt(Config.RenderOptEnabled)
-        applyBtn.Text="✅ Aplicado"; task.delay(1.2,function() applyBtn.Text="⚡ Aplicar Render Ahora" end)
-    end)
-end
-
 secLabel(pageSet,"🔒 Whitelist")
 do
     local WL_ENTRY_H = isMobile and 34 or 26
@@ -1203,243 +1104,6 @@ do
         rstBtn.Text="✅  Reseteado"; task.delay(2,function() rstBtn.Text="🔄  Resetear Config" end)
     end)
 end
-
--- ══════════════════════════════════════════════════════════════
--- TAB 5: SLR (Street Life Remastered)
--- Todo el tab está en pcall — si falla en otro juego no rompe nada
--- ══════════════════════════════════════════════════════════════
-local pageSLR = tabPages[5]
-
-pcall(function()
-local RS = game:GetService("ReplicatedStorage")
-
--- ── Helpers UI del tab SLR ───────────────────────────────────
-local function slrBtn(page, label, bgcol, fn)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1,0,0,ROW_H)
-    b.BackgroundColor3 = bgcol or Color3.fromRGB(0,30,50)
-    b.BorderSizePixel = 0; b.Text = label
-    b.TextColor3 = C_TEXT; b.Font = Enum.Font.GothamBold
-    b.TextSize = TXT_SIZE; b.AutoButtonColor = false
-    b.Parent = page; stroke(b, C_ACCENT, 1)
-    local orig = label
-    b.MouseButton1Click:Connect(function()
-        local ok, err = pcall(fn)
-        b.Text = ok and "OK" or "Error"
-        b.BackgroundColor3 = ok and Color3.fromRGB(0,40,15) or Color3.fromRGB(50,5,5)
-        task.delay(1.4, function()
-            b.Text = orig
-            b.BackgroundColor3 = bgcol or Color3.fromRGB(0,30,50)
-        end)
-        if not ok then warn("[SLR]", tostring(err)) end
-    end)
-    return b
-end
-
--- Dropdown simple que vive dentro del ScrollingFrame
--- Usa ZIndex alto para flotar sobre las otras filas
-local function slrPicker(page, hint, items)
-    local selected = nil
-    local optH = isMobile and 32 or 24
-
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1,0,0,ROW_H)
-    row.BackgroundColor3 = C_ROW; row.BorderSizePixel = 0
-    row.ClipsDescendants = false; row.Parent = page
-    stroke(row, Color3.fromRGB(0,60,90), 1)
-
-    local lbl = Instance.new("TextButton")
-    lbl.Size = UDim2.new(1,0,1,0)
-    lbl.BackgroundTransparency = 1; lbl.BorderSizePixel = 0
-    lbl.Text = hint..": ---"; lbl.TextColor3 = C_DIM
-    lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = TXT_SIZE
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.AutoButtonColor = false; lbl.ZIndex = 2; lbl.Parent = row
-
-    -- Dropdown flota sobre la GUI con ZIndex 30
-    local drop = Instance.new("Frame")
-    drop.Size = UDim2.new(1,0,0,0)
-    drop.Position = UDim2.new(0,0,1,1)
-    drop.BackgroundColor3 = C_DARK; drop.BorderSizePixel = 0
-    drop.ZIndex = 30; drop.ClipsDescendants = true
-    drop.Visible = false; drop.Parent = row
-    stroke(drop, C_ACCENT, 1)
-
-    local scrollDrop = Instance.new("ScrollingFrame")
-    scrollDrop.Size = UDim2.new(1,0,1,0)
-    scrollDrop.BackgroundTransparency = 1; scrollDrop.BorderSizePixel = 0
-    scrollDrop.ScrollBarThickness = 3; scrollDrop.ScrollBarImageColor3 = C_ACCENT
-    scrollDrop.CanvasSize = UDim2.new(0,0,0,#items*optH)
-    scrollDrop.ZIndex = 31; scrollDrop.Parent = drop
-
-    for i, item in ipairs(items) do
-        local ob = Instance.new("TextButton")
-        ob.Size = UDim2.new(1,0,0,optH)
-        ob.Position = UDim2.fromOffset(0,(i-1)*optH)
-        ob.BackgroundColor3 = i%2==0 and C_ROW or C_DARK
-        ob.BorderSizePixel = 0; ob.Text = item
-        ob.Font = Enum.Font.GothamMedium; ob.TextSize = TXT_SIZE
-        ob.TextColor3 = C_TEXT; ob.AutoButtonColor = false
-        ob.ZIndex = 32; ob.Parent = scrollDrop
-        ob.MouseButton1Click:Connect(function()
-            selected = item
-            lbl.Text = hint..": "..item; lbl.TextColor3 = C_ACCENT
-            TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
-            task.delay(0.18, function() drop.Visible = false end)
-        end)
-    end
-
-    local open = false
-    local dropH = math.min(#items * optH, isMobile and 160 or 130)
-    lbl.MouseButton1Click:Connect(function()
-        open = not open
-        if open then
-            drop.Size = UDim2.new(1,0,0,0); drop.Visible = true
-            TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,dropH)}):Play()
-        else
-            TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
-            task.delay(0.18, function() drop.Visible = false end)
-        end
-    end)
-
-    return function() return selected end
-end
-
--- Contador +/- para cantidad
-local function slrQty(page, label, min_, max_)
-    local val = min_ or 1
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1,0,0,ROW_H)
-    row.BackgroundColor3 = C_ROW; row.BorderSizePixel = 0
-    row.Parent = page; stroke(row, Color3.fromRGB(0,60,90), 1)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.55,0,1,0); lbl.Position = UDim2.fromOffset(8,0)
-    lbl.BackgroundTransparency = 1; lbl.Text = label..": "..val
-    lbl.TextColor3 = C_TEXT; lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = TXT_SIZE; lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-
-    local bsz = isMobile and 34 or 26
-    local minus = Instance.new("TextButton")
-    minus.Size = UDim2.fromOffset(bsz,bsz); minus.Position = UDim2.new(0.55,0,0.5,-bsz/2)
-    minus.BackgroundColor3 = Color3.fromRGB(0,20,40); minus.BorderSizePixel = 0
-    minus.Text = "-"; minus.TextColor3 = C_ACCENT; minus.Font = Enum.Font.GothamBold
-    minus.TextSize = TXT_SIZE+2; minus.AutoButtonColor = false; minus.Parent = row
-    stroke(minus, C_ACCENT, 1)
-
-    local plus = Instance.new("TextButton")
-    plus.Size = UDim2.fromOffset(bsz,bsz); plus.Position = UDim2.new(0.55,bsz+4,0.5,-bsz/2)
-    plus.BackgroundColor3 = Color3.fromRGB(0,20,40); plus.BorderSizePixel = 0
-    plus.Text = "+"; plus.TextColor3 = C_ACCENT; plus.Font = Enum.Font.GothamBold
-    plus.TextSize = TXT_SIZE+2; plus.AutoButtonColor = false; plus.Parent = row
-    stroke(plus, C_ACCENT, 1)
-
-    minus.MouseButton1Click:Connect(function()
-        val = math.max(min_ or 1, val-1); lbl.Text = label..": "..val
-    end)
-    plus.MouseButton1Click:Connect(function()
-        val = math.min(max_ or 20, val+1); lbl.Text = label..": "..val
-    end)
-
-    return function() return val end
-end
-
--- ── NOTA de juego ─────────────────────────────────────────────
-do
-    local noteRow = Instance.new("Frame")
-    noteRow.Size = UDim2.new(1,0,0,ROW_H)
-    noteRow.BackgroundColor3 = Color3.fromRGB(20,12,0)
-    noteRow.BorderSizePixel = 0; noteRow.Parent = pageSLR
-    stroke(noteRow, Color3.fromRGB(180,120,0), 1)
-    local noteLbl = Instance.new("TextLabel")
-    noteLbl.Size = UDim2.new(1,-8,1,0); noteLbl.Position = UDim2.fromOffset(6,0)
-    noteLbl.BackgroundTransparency = 1
-    noteLbl.Text = "Solo funciona en Street Life Remastered"
-    noteLbl.TextColor3 = Color3.fromRGB(255,200,60)
-    noteLbl.Font = Enum.Font.GothamBold; noteLbl.TextSize = TXT_SIZE
-    noteLbl.TextXAlignment = Enum.TextXAlignment.Left; noteLbl.Parent = noteRow
-end
-
--- ── CAJA FUERTE ───────────────────────────────────────────────
-secLabel(pageSLR, "Caja Fuerte")
-
-local ITEMS = {
-    "Pistol Ammo","SMG Ammo","Shotgun Ammo","Rifle Ammo",
-    "Ruger","Makarov","Glock17","M&P9","Mac","Tec-9","G36C","Thompson",
-    "Spas","UMP","Shotgun","Glock19X","AK-12","ARPistol","Perun","Draco",
-    "GlockSwitch","AK-47","BinaryG17","Vector","MP5","Micro Uzi",
-    "TSR-15","Famas","AKS-74U","DuffleBag","MentosBag","C4","SkiMask",
-}
-
-local getDepositItem = slrPicker(pageSLR, "Item", ITEMS)
-slrBtn(pageSLR, "Depositar Item", Color3.fromRGB(0,25,55), function()
-    local item = getDepositItem()
-    assert(item, "Selecciona un item")
-    RS.Remotes.Storage:FireServer("Deposit", item)
-end)
-
-local getWithdrawItem = slrPicker(pageSLR, "Sacar Item", ITEMS)
-slrBtn(pageSLR, "Sacar de Caja (Withdraw)", Color3.fromRGB(0,40,15), function()
-    local item = getWithdrawItem()
-    assert(item, "Selecciona un item")
-    RS.Remotes.Storage:FireServer("Grab", item)
-end)
-
-slrBtn(pageSLR, "Depositar TODO el Backpack", Color3.fromRGB(0,20,45), function()
-    local char = player.Character
-    local function dep(name)
-        pcall(function() RS.Remotes.Storage:FireServer("Deposit", name) end)
-    end
-    for _, t in ipairs(player.Backpack:GetChildren()) do dep(t.Name); task.wait(0.1) end
-    if char then
-        for _, t in ipairs(char:GetChildren()) do
-            if t:IsA("Tool") then dep(t.Name); task.wait(0.1) end
-        end
-    end
-end)
-
--- ── COMPRAR ARMAS ─────────────────────────────────────────────
-secLabel(pageSLR, "Comprar Arma")
-
-local GUNS = {
-    "Ruger","Makarov","Glock17","M&P9","Mac","Tec-9","G36C","Thompson",
-    "Spas","UMP","Shotgun","Glock19X","AK-12","ARPistol","Perun","Draco",
-    "GlockSwitch","AK-47","BinaryG17","Vector","MP5","Micro Uzi",
-    "TSR-15","Famas","AKS-74U",
-}
-local getGun = slrPicker(pageSLR, "Arma", GUNS)
-slrBtn(pageSLR, "Comprar Arma", Color3.fromRGB(30,0,55), function()
-    local gun = getGun(); assert(gun, "Selecciona un arma")
-    RS.Remotes.GunBuy:FireServer(gun)
-end)
-
--- ── COMPRAR MUNICION ──────────────────────────────────────────
-secLabel(pageSLR, "Comprar Municion")
-
-local AMMOS = {"Pistol Ammo","SMG Ammo","Shotgun Ammo","Rifle Ammo"}
-local getAmmo = slrPicker(pageSLR, "Municion", AMMOS)
-local getAmmoQty = slrQty(pageSLR, "Cantidad", 1, 20)
-slrBtn(pageSLR, "Comprar Municion", Color3.fromRGB(30,20,0), function()
-    local ammo = getAmmo(); assert(ammo, "Selecciona municion")
-    local qty = getAmmoQty()
-    for i = 1, qty do
-        RS.Remotes.GunBuy:FireServer(ammo)
-        if i < qty then task.wait(0.1) end
-    end
-end)
-
--- ── COMPRAS GENERALES ─────────────────────────────────────────
-secLabel(pageSLR, "Compras Generales")
-
-local BUYITEMS = {"DuffleBag","MentosBag","C4","SkiMask"}
-local getBuyItem = slrPicker(pageSLR, "Item", BUYITEMS)
-slrBtn(pageSLR, "Comprar Item", Color3.fromRGB(25,10,45), function()
-    local item = getBuyItem(); assert(item, "Selecciona un item")
-    RS.Remotes.Buy:FireServer(item)
-end)
-
-end) -- fin pcall SLR tab
 
 -- ══════════════════════════════════════════════════════════════
 -- DRAG
@@ -1779,6 +1443,8 @@ pcall(function()
         local method=getnamecallmethod()
 
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
+        -- En stream mode se salta (no queremos intervenir remotes), pero
+        -- el raycast silent aim sigue activo siempre.
         if Config.UniversalSAEnabled and not checkcaller() and not streamModeOn
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
@@ -1786,27 +1452,22 @@ pcall(function()
             if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
             if usePos2 and math.random(100)<=Config.HitChance then
                 local args={...}
-                -- Mínimo 2 args (remote + al menos 1 param)
-                if #args >= 2 then
-                    local myC=player.Character
-                    local myR=myC and myC:FindFirstChild("HumanoidRootPart")
-                    local replaced=false
-                    for i=2,math.min(#args,8) do
-                        -- Solo reemplazar Vector3 que sean posiciones válidas (no nil, no dirección ~1)
+                local myC=player.Character
+                local myR=myC and myC:FindFirstChild("HumanoidRootPart")
+                local replaced=false
+                for i=2,math.min(#args,8) do
+                    if typeof(args[i])=="Vector3" then
                         local v=args[i]
-                        if typeof(v)=="Vector3" and v.Magnitude>2 and v.Magnitude<1e6 then
+                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
+                        if v.Magnitude>2 then
                             if myR then
                                 local d=(v-myR.Position).Magnitude
-                                -- Entre 5 y 1500 studs = posición de hit válida
-                                if d>5 and d<1500 then
-                                    args[i]=usePos2; replaced=true
-                                    break -- solo reemplazar el primer Vector3 válido
-                                end
+                                if d>5 and d<2000 then args[i]=usePos2; replaced=true end
                             end
                         end
                     end
-                    if replaced then return oldNC(table.unpack(args)) end
                 end
+                if replaced then return oldNC(table.unpack(args)) end
             end
         end
 
@@ -1978,7 +1639,7 @@ RunService.RenderStepped:Connect(function()
 
         if Config.NpcSilentAimEnabled then
             npcCacheFrame=npcCacheFrame+1
-            if npcCacheFrame>=200 then npcCacheFrame=0; rebuildNpcCache() end
+            if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
             local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
             local myChar3=player.Character
@@ -2027,7 +1688,7 @@ RunService.RenderStepped:Connect(function()
     end
 
     -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
-    if frame%8==0 then _refreshColors() end
+    if frame%6==0 then _refreshColors() end
 
     -- FLY
     if Config.FlyEnabled~=flyActive then
@@ -2073,13 +1734,33 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- TriggerBot — funciona IGUAL que silent aim:
-    -- En cuanto hay un objetivo dentro del FOV (cachedTargetPos existe),
-    -- activa el tool automáticamente. No requiere que el usuario esté disparando.
-    -- El silent aim redirige la bala al objetivo → la bala impacta.
-    if Config.TriggerBotEnabled and cachedTargetPos then
-        local tool=myChar and myChar:FindFirstChildOfClass("Tool")
-        if tool then pcall(function() tool:Activate() end) end
+    -- TriggerBot: dispara cuando hay un objetivo en el FOV cache (kill check: health > 0)
+    -- FIJO: usa cachedTargetPos en vez de raycast natural + debounce propio
+    if Config.TriggerBotEnabled then
+        local triggerTarget=nil
+        -- Primero intenta con silent aim cache (jugadores)
+        if cachedTargetPos and Config.SilentAimEnabled then
+            triggerTarget=cachedTargetPos
+        else
+            -- Buscar jugador en FOV sin necesitar silent aim
+            local bestD3=math.huge
+            for _,p in ipairs(Players:GetPlayers()) do
+                if shouldSkip(p) then continue end
+                local char=p.Character; if not char then continue end
+                local hum=char:FindFirstChildOfClass("Humanoid")
+                local root=char:FindFirstChild("HumanoidRootPart")
+                -- Kill check: solo si el objetivo sigue vivo
+                if not hum or hum.Health<=0 or not root then continue end
+                local sp2,onS=camera:WorldToViewportPoint(root.Position)
+                if not onS then continue end
+                local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
+                if d<Config.FovRadius and d<bestD3 then bestD3=d; triggerTarget=root.Position end
+            end
+        end
+        if triggerTarget and isFiring then
+            local tool=myChar and myChar:FindFirstChildOfClass("Tool")
+            if tool then pcall(function() tool:Activate() end) end
+        end
     end
 
     local boxCol=_boxCol
@@ -2102,8 +1783,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- ESP — solo cada 2 frames para reducir carga
-    if frame%2==0 then
+    -- ESP
     for p,obj in pairs(espObjects) do
         local char=p.Character
         local function allOff()
@@ -2116,8 +1796,6 @@ RunService.RenderStepped:Connect(function()
         local root=char:FindFirstChild("HumanoidRootPart")
         local hum=char:FindFirstChild("Humanoid")
         if not root or not hum then allOff(); continue end
-        -- Early exit: si está muy lejos en 3D no calcular viewport
-        if myRoot and (root.Position-myRoot.Position).Magnitude>Config.EspMaxDist+50 then allOff(); continue end
         local screenPos,onScreen=camera:WorldToViewportPoint(root.Position)
         if not onScreen then allOff(); continue end
         local dist3D=myRoot and math.floor((root.Position-myRoot.Position).Magnitude) or 0
@@ -2131,14 +1809,7 @@ RunService.RenderStepped:Connect(function()
             topSP=Vector2.new(t.X,t.Y); botSP=Vector2.new(b.X,b.Y)
         else topSP=sp-Vector2.new(0,50); botSP=sp+Vector2.new(0,50) end
         local boxH=math.abs(botSP.Y-topSP.Y); local boxW=boxH*0.45
-        -- Box rojo si está detrás de pared
-        local behindWall=false
-        if myChar then
-            local ok2,obs2=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{myChar,char}) end)
-            behindWall=ok2 and obs2 and #obs2>0
-        end
-        local curBoxCol=behindWall and Color3.fromRGB(255,50,50) or boxCol
-        obj.box.Visible=Config.EspBox; obj.box.Color=curBoxCol
+        obj.box.Visible=Config.EspBox; obj.box.Color=boxCol
         if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
         if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
@@ -2175,7 +1846,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
     if not snapTargetP then snapLineDraw.Visible=false end
-end) -- RenderStepped
+end)
 
 print("[SYY toop] Loaded — "..player.Name)
 
