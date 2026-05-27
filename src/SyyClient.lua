@@ -47,6 +47,14 @@ local DefaultConfig = {
     StreamMode=false,
     TeamCheckEnabled=false,
     UniversalSAEnabled=false,
+    -- Render Optimizer: mejora FPS eliminando efectos visuales de Roblox
+    RenderOptEnabled=false,
+    RenderQuality=1,       -- 1=mínima calidad (máx FPS), 21=calidad normal
+    RenderShadows=false,   -- sombras ON/OFF
+    RenderTextures=false,  -- texturas ON/OFF
+    RenderParticles=false, -- partículas, humo, fuego ON/OFF
+    RenderPostFX=false,    -- post-process (bloom, blur, etc.) ON/OFF
+    RenderGrass=false,     -- hierba ON/OFF
     Whitelist={},
 }
 local Config = {}
@@ -963,6 +971,100 @@ do
     infoLbl.TextXAlignment=Enum.TextXAlignment.Left; infoLbl.Parent=infoRow
 end
 
+-- ── RENDER OPTIMIZER ────────────────────────────────────────
+secLabel(pageSet,"⚡ Render Optimizer (+ FPS)")
+
+local function applyRenderOpt(on)
+    local lighting=game:GetService("Lighting")
+    pcall(function()
+        if on then
+            -- Calidad de render mínima
+            settings().Rendering.QualityLevel=Enum.QualityLevel.Level01
+            -- Sombras
+            lighting.GlobalShadows=Config.RenderShadows
+            -- Post-process (Bloom, Blur, ColorCorrection, etc.)
+            for _,fx in ipairs(lighting:GetChildren()) do
+                if fx:IsA("PostEffect") then fx.Enabled=Config.RenderPostFX end
+            end
+            -- Partículas, humo, fuego, sparkles
+            for _,obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
+                or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled=Config.RenderParticles
+                end
+            end
+            -- Texturas de terreno (solo las que se pueden desactivar)
+            local terrain=Workspace:FindFirstChildOfClass("Terrain")
+            if terrain then
+                terrain.WaterWaveSize=0; terrain.WaterWaveSpeed=0
+            end
+            -- Hierba: nivel de detalle bajísimo
+            Workspace.StreamingEnabled=Workspace.StreamingEnabled  -- no tocar
+            pcall(function() Workspace.TerrainDetail=0 end)
+        else
+            -- Restaurar calidad
+            settings().Rendering.QualityLevel=Enum.QualityLevel["Level"..string.format("%02d",math.clamp(Config.RenderQuality,1,21))]
+            lighting.GlobalShadows=true
+            for _,fx in ipairs(lighting:GetChildren()) do
+                if fx:IsA("PostEffect") then fx.Enabled=true end
+            end
+            for _,obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
+                or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled=true
+                end
+            end
+            pcall(function() Workspace.TerrainDetail=4 end)
+        end
+    end)
+end
+
+makeToggle(pageSet,"⚡ Render Opt","RenderOptEnabled",function(on)
+    applyRenderOpt(on)
+end)
+makeSlider(pageSet,"Calidad (1=max FPS)","RenderQuality",1,21,function(v)
+    if Config.RenderOptEnabled then
+        pcall(function()
+            settings().Rendering.QualityLevel=Enum.QualityLevel["Level"..string.format("%02d",math.clamp(v,1,21))]
+        end)
+    end
+end)
+makeToggle(pageSet,"Sombras","RenderShadows",function(v)
+    if Config.RenderOptEnabled then
+        pcall(function() game:GetService("Lighting").GlobalShadows=v end)
+    end
+end)
+makeToggle(pageSet,"Post-FX (Bloom/Blur)","RenderPostFX",function(v)
+    if Config.RenderOptEnabled then
+        for _,fx in ipairs(game:GetService("Lighting"):GetChildren()) do
+            if fx:IsA("PostEffect") then fx.Enabled=v end
+        end
+    end
+end)
+makeToggle(pageSet,"Partículas/Fuego","RenderParticles",function(v)
+    if Config.RenderOptEnabled then
+        for _,obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
+            or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled=v end
+        end
+    end
+end)
+
+-- Botón: aplicar ahora
+do
+    local applyBtn=Instance.new("TextButton")
+    applyBtn.Size=UDim2.new(1,0,0,ROW_H); applyBtn.BackgroundColor3=Color3.fromRGB(0,35,15)
+    applyBtn.BorderSizePixel=0; applyBtn.Text="⚡ Aplicar Render Ahora"
+    applyBtn.TextColor3=Color3.fromRGB(80,255,140); applyBtn.Font=Enum.Font.GothamBold
+    applyBtn.TextSize=TXT_SIZE; applyBtn.AutoButtonColor=false; applyBtn.Parent=pageSet
+    stroke(applyBtn,Color3.fromRGB(0,160,80),1)
+    applyBtn.MouseButton1Click:Connect(function()
+        applyRenderOpt(Config.RenderOptEnabled)
+        applyBtn.Text="✅ Aplicado"; task.delay(1.2,function() applyBtn.Text="⚡ Aplicar Render Ahora" end)
+    end)
+end
+
 secLabel(pageSet,"🔒 Whitelist")
 do
     local WL_ENTRY_H = isMobile and 34 or 26
@@ -1639,7 +1741,7 @@ RunService.RenderStepped:Connect(function()
 
         if Config.NpcSilentAimEnabled then
             npcCacheFrame=npcCacheFrame+1
-            if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
+            if npcCacheFrame>=200 then npcCacheFrame=0; rebuildNpcCache() end
             local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
             local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
             local myChar3=player.Character
@@ -1688,7 +1790,7 @@ RunService.RenderStepped:Connect(function()
     end
 
     -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
-    if frame%6==0 then _refreshColors() end
+    if frame%8==0 then _refreshColors() end
 
     -- FLY
     if Config.FlyEnabled~=flyActive then
@@ -1734,33 +1836,13 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- TriggerBot: dispara cuando hay un objetivo en el FOV cache (kill check: health > 0)
-    -- FIJO: usa cachedTargetPos en vez de raycast natural + debounce propio
-    if Config.TriggerBotEnabled then
-        local triggerTarget=nil
-        -- Primero intenta con silent aim cache (jugadores)
-        if cachedTargetPos and Config.SilentAimEnabled then
-            triggerTarget=cachedTargetPos
-        else
-            -- Buscar jugador en FOV sin necesitar silent aim
-            local bestD3=math.huge
-            for _,p in ipairs(Players:GetPlayers()) do
-                if shouldSkip(p) then continue end
-                local char=p.Character; if not char then continue end
-                local hum=char:FindFirstChildOfClass("Humanoid")
-                local root=char:FindFirstChild("HumanoidRootPart")
-                -- Kill check: solo si el objetivo sigue vivo
-                if not hum or hum.Health<=0 or not root then continue end
-                local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                if not onS then continue end
-                local d=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
-                if d<Config.FovRadius and d<bestD3 then bestD3=d; triggerTarget=root.Position end
-            end
-        end
-        if triggerTarget and isFiring then
-            local tool=myChar and myChar:FindFirstChildOfClass("Tool")
-            if tool then pcall(function() tool:Activate() end) end
-        end
+    -- TriggerBot — funciona IGUAL que silent aim:
+    -- En cuanto hay un objetivo dentro del FOV (cachedTargetPos existe),
+    -- activa el tool automáticamente. No requiere que el usuario esté disparando.
+    -- El silent aim redirige la bala al objetivo → la bala impacta.
+    if Config.TriggerBotEnabled and cachedTargetPos then
+        local tool=myChar and myChar:FindFirstChildOfClass("Tool")
+        if tool then pcall(function() tool:Activate() end) end
     end
 
     local boxCol=_boxCol
@@ -1783,7 +1865,8 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- ESP
+    -- ESP — solo cada 2 frames para reducir carga
+    if frame%2==0 then
     for p,obj in pairs(espObjects) do
         local char=p.Character
         local function allOff()
@@ -1796,6 +1879,8 @@ RunService.RenderStepped:Connect(function()
         local root=char:FindFirstChild("HumanoidRootPart")
         local hum=char:FindFirstChild("Humanoid")
         if not root or not hum then allOff(); continue end
+        -- Early exit: si está muy lejos en 3D no calcular viewport
+        if myRoot and (root.Position-myRoot.Position).Magnitude>Config.EspMaxDist+50 then allOff(); continue end
         local screenPos,onScreen=camera:WorldToViewportPoint(root.Position)
         if not onScreen then allOff(); continue end
         local dist3D=myRoot and math.floor((root.Position-myRoot.Position).Magnitude) or 0
@@ -1809,7 +1894,14 @@ RunService.RenderStepped:Connect(function()
             topSP=Vector2.new(t.X,t.Y); botSP=Vector2.new(b.X,b.Y)
         else topSP=sp-Vector2.new(0,50); botSP=sp+Vector2.new(0,50) end
         local boxH=math.abs(botSP.Y-topSP.Y); local boxW=boxH*0.45
-        obj.box.Visible=Config.EspBox; obj.box.Color=boxCol
+        -- Box rojo si está detrás de pared
+        local behindWall=false
+        if myChar then
+            local ok2,obs2=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{myChar,char}) end)
+            behindWall=ok2 and obs2 and #obs2>0
+        end
+        local curBoxCol=behindWall and Color3.fromRGB(255,50,50) or boxCol
+        obj.box.Visible=Config.EspBox; obj.box.Color=curBoxCol
         if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
         if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
@@ -1846,7 +1938,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
     if not snapTargetP then snapLineDraw.Visible=false end
-end)
+end) -- RenderStepped
 
 print("[SYY toop] Loaded — "..player.Name)
 
