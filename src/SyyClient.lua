@@ -977,45 +977,41 @@ secLabel(pageSet,"⚡ Render Optimizer (+ FPS)")
 local function applyRenderOpt(on)
     local lighting=game:GetService("Lighting")
     pcall(function()
-        if on then
-            -- Calidad de render mínima
-            settings().Rendering.QualityLevel=Enum.QualityLevel.Level01
-            -- Sombras
-            lighting.GlobalShadows=Config.RenderShadows
-            -- Post-process (Bloom, Blur, ColorCorrection, etc.)
-            for _,fx in ipairs(lighting:GetChildren()) do
-                if fx:IsA("PostEffect") then fx.Enabled=Config.RenderPostFX end
+        -- Calidad de render
+        pcall(function()
+            if on then
+                settings().Rendering.QualityLevel=Enum.QualityLevel.Level01
+            else
+                local lvl="Level"..string.format("%02d",math.clamp(Config.RenderQuality,1,21))
+                settings().Rendering.QualityLevel=Enum.QualityLevel[lvl]
             end
-            -- Partículas, humo, fuego, sparkles
+        end)
+        -- Sombras
+        pcall(function() lighting.GlobalShadows = not on or Config.RenderShadows end)
+        -- Post-process
+        pcall(function()
+            for _,fx in ipairs(lighting:GetChildren()) do
+                if fx:IsA("PostEffect") then fx.Enabled = not on or Config.RenderPostFX end
+            end
+        end)
+        -- Partículas
+        pcall(function()
             for _,obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
                 or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                    obj.Enabled=Config.RenderParticles
+                    obj.Enabled = not on or Config.RenderParticles
                 end
             end
-            -- Texturas de terreno (solo las que se pueden desactivar)
+        end)
+        -- Terreno
+        pcall(function()
             local terrain=Workspace:FindFirstChildOfClass("Terrain")
             if terrain then
-                terrain.WaterWaveSize=0; terrain.WaterWaveSpeed=0
+                if on then terrain.WaterWaveSize=0; terrain.WaterWaveSpeed=0
+                else terrain.WaterWaveSize=0.15; terrain.WaterWaveSpeed=10 end
             end
-            -- Hierba: nivel de detalle bajísimo
-            Workspace.StreamingEnabled=Workspace.StreamingEnabled  -- no tocar
-            pcall(function() Workspace.TerrainDetail=0 end)
-        else
-            -- Restaurar calidad
-            settings().Rendering.QualityLevel=Enum.QualityLevel["Level"..string.format("%02d",math.clamp(Config.RenderQuality,1,21))]
-            lighting.GlobalShadows=true
-            for _,fx in ipairs(lighting:GetChildren()) do
-                if fx:IsA("PostEffect") then fx.Enabled=true end
-            end
-            for _,obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
-                or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                    obj.Enabled=true
-                end
-            end
-            pcall(function() Workspace.TerrainDetail=4 end)
-        end
+        end)
+        pcall(function() Workspace.TerrainDetail = on and 0 or 4 end)
     end)
 end
 
@@ -1025,7 +1021,8 @@ end)
 makeSlider(pageSet,"Calidad (1=max FPS)","RenderQuality",1,21,function(v)
     if Config.RenderOptEnabled then
         pcall(function()
-            settings().Rendering.QualityLevel=Enum.QualityLevel["Level"..string.format("%02d",math.clamp(v,1,21))]
+            local lvl="Level"..string.format("%02d",math.clamp(v,1,21))
+            settings().Rendering.QualityLevel=Enum.QualityLevel[lvl]
         end)
     end
 end)
