@@ -120,7 +120,14 @@ end
 local gui=Instance.new("ScreenGui")
 gui.Name="SyySystemUI"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
 gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; gui.DisplayOrder=99
-gui.Parent=playerGui
+-- Proteger GUI: CoreGui > gethui > syn > playerGui
+pcall(function()
+    if syn and syn.protect_gui then syn.protect_gui(gui) end
+end)
+local _guiParented = false
+pcall(function() gui.Parent=game:GetService("CoreGui"); _guiParented=true end)
+if not _guiParented then pcall(function() gui.Parent=gethui(); _guiParented=true end) end
+if not _guiParented then gui.Parent=playerGui end
 
 local streamModeOn=false
 local streamTouchToken=nil
