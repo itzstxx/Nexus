@@ -297,12 +297,12 @@ tabBarLine.BackgroundColor3=C_ACCENT; tabBarLine.BorderSizePixel=0; tabBarLine.P
 
 -- indicador deslizante de tab activo
 local tabIndicator=Instance.new("Frame")
-tabIndicator.Size=UDim2.new(1/4,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
+tabIndicator.Size=UDim2.new(1/5,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
 tabIndicator.BackgroundColor3=C_ACCENT; tabIndicator.BorderSizePixel=0; tabIndicator.ZIndex=3; tabIndicator.Parent=tabBar
 
 local contentY=headerH+tabBarH+2
 local contentH=panelH-contentY-6
-local tabNames={"Aimbot","Visuals","Extras","Settings"}
+local tabNames={"Aim","Vis","Ext","Cfg","SLR"}
 local tabBtns={}; local tabPages={}
 
 local function makeTabPage()
@@ -1201,6 +1201,283 @@ do
     rstBtn.MouseButton1Click:Connect(function()
         Config=deepCopy(DefaultConfig); saveConfig(); rebuildWlSet()
         rstBtn.Text="✅  Reseteado"; task.delay(2,function() rstBtn.Text="🔄  Resetear Config" end)
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- TAB 5: SLR (Street Life Remastered)
+-- ══════════════════════════════════════════════════════════════
+local pageSLR=tabPages[5]
+
+do
+    local RS = game:GetService("ReplicatedStorage")
+
+    -- Helpers UI locales
+    local function slrBtn(page, label, color, fn)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1,0,0,ROW_H)
+        b.BackgroundColor3 = color or Color3.fromRGB(0,30,50)
+        b.BorderSizePixel = 0
+        b.Text = label
+        b.TextColor3 = C_TEXT
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = TXT_SIZE
+        b.AutoButtonColor = false
+        b.Parent = page
+        stroke(b, C_ACCENT, 1)
+        b.MouseButton1Click:Connect(function()
+            local ok, err = pcall(fn)
+            local orig = b.Text
+            if ok then
+                b.Text = "✅ OK"
+                b.BackgroundColor3 = Color3.fromRGB(0,40,20)
+            else
+                b.Text = "❌ Error"
+                b.BackgroundColor3 = Color3.fromRGB(40,0,0)
+                warn("[SLR]", err)
+            end
+            task.delay(1.5, function()
+                b.Text = orig
+                b.BackgroundColor3 = color or Color3.fromRGB(0,30,50)
+            end)
+        end)
+        return b
+    end
+
+    local function slrDropBtn(page, label, items, onSelect)
+        -- Dropdown + botón ejecutar combinados
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1,0,0,ROW_H*2+4)
+        container.BackgroundTransparency = 1
+        container.Parent = page
+
+        local lay = Instance.new("UIListLayout")
+        lay.SortOrder = Enum.SortOrder.LayoutOrder
+        lay.Padding = UDim.new(0,3)
+        lay.Parent = container
+
+        local selLbl = Instance.new("TextButton")
+        selLbl.Size = UDim2.new(1,0,0,ROW_H)
+        selLbl.BackgroundColor3 = Color3.fromRGB(0,20,40)
+        selLbl.BorderSizePixel = 0
+        selLbl.Text = label..": ---"
+        selLbl.TextColor3 = C_DIM
+        selLbl.Font = Enum.Font.GothamMedium
+        selLbl.TextSize = TXT_SIZE
+        selLbl.AutoButtonColor = false
+        selLbl.Parent = container
+        stroke(selLbl, C_ACCENT, 1)
+
+        local selected = nil
+        local dropOpen = false
+        local dropFrame = Instance.new("Frame")
+        dropFrame.Size = UDim2.new(1,0,0,0)
+        dropFrame.BackgroundColor3 = C_DARK
+        dropFrame.BorderSizePixel = 0
+        dropFrame.ZIndex = 20
+        dropFrame.ClipsDescendants = true
+        dropFrame.Parent = container
+        stroke(dropFrame, C_ACCENT, 1)
+
+        local optH = isMobile and 32 or 24
+        for idx, item in ipairs(items) do
+            local ob = Instance.new("TextButton")
+            ob.Size = UDim2.new(1,0,0,optH)
+            ob.Position = UDim2.fromOffset(0,(idx-1)*optH)
+            ob.BackgroundColor3 = C_ROW
+            ob.BorderSizePixel = 0
+            ob.Text = item
+            ob.Font = Enum.Font.GothamMedium
+            ob.TextSize = TXT_SIZE
+            ob.TextColor3 = C_TEXT
+            ob.AutoButtonColor = false
+            ob.ZIndex = 21
+            ob.Parent = dropFrame
+            ob.MouseButton1Click:Connect(function()
+                selected = item
+                selLbl.Text = label..": "..item
+                selLbl.TextColor3 = C_ACCENT
+                TweenService:Create(dropFrame,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
+                task.delay(0.18, function() dropFrame.Visible=false end)
+                container.Size = UDim2.new(1,0,0,ROW_H)
+                dropOpen = false
+            end)
+        end
+
+        selLbl.MouseButton1Click:Connect(function()
+            dropOpen = not dropOpen
+            if dropOpen then
+                dropFrame.Visible = true
+                container.Size = UDim2.new(1,0,0,ROW_H + #items*optH)
+                TweenService:Create(dropFrame,TWEENI,{Size=UDim2.new(1,0,0,#items*optH)}):Play()
+            else
+                TweenService:Create(dropFrame,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
+                task.delay(0.18, function() dropFrame.Visible=false end)
+                container.Size = UDim2.new(1,0,0,ROW_H)
+            end
+        end)
+
+        return container, function() return selected end
+    end
+
+    -- ── CAJA FUERTE ─────────────────────────────────────────
+    secLabel(pageSLR, "🔒 Caja Fuerte")
+
+    -- Lista de items de inventario para depositar
+    local DEPOSIT_ITEMS = {
+        "Pistol Ammo","SMG Ammo","Shotgun Ammo","Rifle Ammo",
+        "Makarov","Glock17","M&P9","Mac","Tec-9","G36C","Thompson","Spas",
+        "UMP","Shotgun","Glock19X","AK-12","ARPistol","Perun","Draco",
+        "GlockSwitch","AK-47","BinaryG17","Vector","MP5","Micro Uzi",
+        "TSR-15","Famas","AKS-74U","Ruger",
+        "DuffleBag","MentosBag","C4","SkiMask",
+    }
+
+    local depositDrop, getDepositSel = slrDropBtn(pageSLR, "Item", DEPOSIT_ITEMS, nil)
+
+    slrBtn(pageSLR, "💾 Guardar en Caja (Deposit)", Color3.fromRGB(0,30,60), function()
+        local item = getDepositSel()
+        assert(item, "Selecciona un item primero")
+        local StorageRemote = RS.Remotes.Storage
+        StorageRemote:FireServer("Deposit", item)
+    end)
+
+    -- Withdraw items — misma lista
+    local withdrawDrop, getWithdrawSel = slrDropBtn(pageSLR, "Item", DEPOSIT_ITEMS, nil)
+
+    slrBtn(pageSLR, "📤 Sacar de Caja (Withdraw)", Color3.fromRGB(0,40,20), function()
+        local item = getWithdrawSel()
+        assert(item, "Selecciona un item primero")
+        local StorageRemote = RS.Remotes.Storage
+        StorageRemote:FireServer("Grab", item)
+    end)
+
+    slrBtn(pageSLR, "📦 Depositar TODO (Armas)", Color3.fromRGB(0,25,50), function()
+        local StorageRemote = RS.Remotes.Storage
+        local char = player.Character
+        if not char then return end
+        for _, tool in ipairs(player.Backpack:GetChildren()) do
+            pcall(function() StorageRemote:FireServer("Deposit", tool.Name) end)
+            task.wait(0.12)
+        end
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                pcall(function() StorageRemote:FireServer("Deposit", tool.Name) end)
+                task.wait(0.12)
+            end
+        end
+    end)
+
+    -- ── COMPRAR ARMAS ────────────────────────────────────────
+    secLabel(pageSLR, "🔫 Comprar Arma")
+
+    local GUNS = {
+        "Ruger ($800)", "Makarov ($1000)", "Glock17 ($1200)", "M&P9 ($2500)",
+        "Mac ($3000)", "Tec-9 ($3500)", "G36C ($4000)", "Thompson ($4000)",
+        "Spas ($4500)", "UMP ($4800)", "Shotgun ($5000)", "Glock19X ($5000)",
+        "AK-12 ($5000)", "ARPistol ($5000)", "Perun ($5000)", "Draco ($5200)",
+        "GlockSwitch ($5400)", "AK-47 ($6500)", "BinaryG17 ($7000)", "Vector ($7000)",
+        "MP5 ($7500)", "Micro Uzi ($7500)", "TSR-15 ($8000)", "Famas ($8000)",
+        "AKS-74U ($8500)",
+    }
+    -- Extraer nombre limpio (sin precio)
+    local function gunName(s) return s:match("^(.-)%s*%(") or s end
+
+    local gunDrop, getGunSel = slrDropBtn(pageSLR, "Arma", GUNS, nil)
+
+    slrBtn(pageSLR, "💳 Comprar Arma", Color3.fromRGB(30,0,50), function()
+        local gun = getGunSel()
+        assert(gun, "Selecciona un arma primero")
+        local GunBuyRemote = RS.Remotes.GunBuy
+        GunBuyRemote:FireServer(gunName(gun))
+    end)
+
+    -- ── COMPRAR MUNICIÓN ─────────────────────────────────────
+    secLabel(pageSLR, "🔧 Comprar Munición")
+
+    local AMMOS = {
+        "Pistol Ammo ($50)", "SMG Ammo ($100)",
+        "Shotgun Ammo ($100)", "Rifle Ammo ($100)",
+    }
+    local function ammoName(s) return s:match("^(.-)%s*%(") or s end
+
+    local ammoDrop, getAmmoSel = slrDropBtn(pageSLR, "Munición", AMMOS, nil)
+
+    -- Cantidad de paquetes
+    local ammoQty = 1
+    do
+        local qRow = Instance.new("Frame")
+        qRow.Size = UDim2.new(1,0,0,ROW_H)
+        qRow.BackgroundColor3 = C_ROW
+        qRow.BorderSizePixel = 0
+        qRow.Parent = pageSLR
+        stroke(qRow, Color3.fromRGB(0,60,90), 1)
+
+        local qLbl = Instance.new("TextLabel")
+        qLbl.Size = UDim2.new(0.5,0,1,0)
+        qLbl.Position = UDim2.fromOffset(8,0)
+        qLbl.BackgroundTransparency = 1
+        qLbl.Text = "Cantidad: 1"
+        qLbl.TextColor3 = C_TEXT
+        qLbl.Font = Enum.Font.GothamMedium
+        qLbl.TextSize = TXT_SIZE
+        qLbl.TextXAlignment = Enum.TextXAlignment.Left
+        qLbl.Parent = qRow
+
+        local btnSz = isMobile and 36 or 28
+        local minusBtn = Instance.new("TextButton")
+        minusBtn.Size = UDim2.fromOffset(btnSz,btnSz)
+        minusBtn.Position = UDim2.new(0.5,0,0.5,-btnSz/2)
+        minusBtn.BackgroundColor3 = Color3.fromRGB(0,20,40)
+        minusBtn.BorderSizePixel = 0; minusBtn.Text = "-"
+        minusBtn.TextColor3 = C_ACCENT; minusBtn.Font = Enum.Font.GothamBold
+        minusBtn.TextSize = TXT_SIZE+2; minusBtn.AutoButtonColor = false
+        minusBtn.Parent = qRow; stroke(minusBtn,C_ACCENT,1)
+
+        local plusBtn = Instance.new("TextButton")
+        plusBtn.Size = UDim2.fromOffset(btnSz,btnSz)
+        plusBtn.Position = UDim2.new(0.5,btnSz+4,0.5,-btnSz/2)
+        plusBtn.BackgroundColor3 = Color3.fromRGB(0,20,40)
+        plusBtn.BorderSizePixel = 0; plusBtn.Text = "+"
+        plusBtn.TextColor3 = C_ACCENT; plusBtn.Font = Enum.Font.GothamBold
+        plusBtn.TextSize = TXT_SIZE+2; plusBtn.AutoButtonColor = false
+        plusBtn.Parent = qRow; stroke(plusBtn,C_ACCENT,1)
+
+        minusBtn.MouseButton1Click:Connect(function()
+            ammoQty = math.max(1, ammoQty-1)
+            qLbl.Text = "Cantidad: "..ammoQty
+        end)
+        plusBtn.MouseButton1Click:Connect(function()
+            ammoQty = math.min(20, ammoQty+1)
+            qLbl.Text = "Cantidad: "..ammoQty
+        end)
+    end
+
+    slrBtn(pageSLR, "💳 Comprar Munición", Color3.fromRGB(30,20,0), function()
+        local ammo = getAmmoSel()
+        assert(ammo, "Selecciona municion primero")
+        local GunBuyRemote = RS.Remotes.GunBuy
+        for i = 1, ammoQty do
+            GunBuyRemote:FireServer(ammoName(ammo))
+            if i < ammoQty then task.wait(0.1) end
+        end
+    end)
+
+    -- ── COMPRAS GENERALES ────────────────────────────────────
+    secLabel(pageSLR, "🛒 Compras Generales")
+
+    local BUYITEMS = {
+        "DuffleBag ($500)", "MentosBag ($300)", "C4 ($2000)", "SkiMask ($50)",
+    }
+    local function buyName(s) return s:match("^(.-)%s*%(") or s end
+
+    local buyDrop, getBuySel = slrDropBtn(pageSLR, "Item", BUYITEMS, nil)
+
+    slrBtn(pageSLR, "💳 Comprar Item", Color3.fromRGB(20,10,40), function()
+        local item = getBuySel()
+        assert(item, "Selecciona un item primero")
+        local BuyRemote = RS.Remotes.Buy
+        BuyRemote:FireServer(buyName(item))
     end)
 end
 
