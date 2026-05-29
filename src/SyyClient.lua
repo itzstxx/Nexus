@@ -50,7 +50,7 @@ local DefaultConfig = {
     Whitelist={},
     _UnlockFps=false, _DisablePostFx=false, _GraySky=false,
     _NoShadows=false, _NoGrass=false, _NoParticles=false, _NoTextures=false,
-    _LowQuality=false, _CompatMode=false,
+    _CompatMode=false,
 }
 local Config = {}
 local function deepCopy(t)
@@ -1157,13 +1157,6 @@ local function applyNoTextures(on)
     end
 end
 
-local function applyLowQuality(on)
-    pcall(function()
-        if on then settings().Rendering.QualityLevel=Enum.QualityLevel.Level01
-        else settings().Rendering.QualityLevel=Enum.QualityLevel.Automatic end
-    end)
-end
-
 local function applyCompat(on)
     pcall(function()
         if on then Lighting.Technology=Enum.Technology.Compatibility
@@ -1206,12 +1199,7 @@ makeToggle(pageExt,"🧱 Sin Texturas","_NoTextures",function(on) applyNoTexture
 if not rawget(Config,"_NoTextures") then Config._NoTextures=false end
 task.defer(function() if Config._NoTextures then applyNoTextures(true) end end)
 
--- ── 8. Calidad Mínima
-makeToggle(pageExt,"📉 Calidad Mínima (L1)","_LowQuality",function(on) applyLowQuality(on) end)
-if not rawget(Config,"_LowQuality") then Config._LowQuality=false end
-task.defer(function() if Config._LowQuality then applyLowQuality(true) end end)
-
--- ── 9. Modo Compatibilidad
+-- ── 8. Modo Compatibilidad
 makeToggle(pageExt,"🖥 Modo Compatibilidad","_CompatMode",function(on) applyCompat(on) end)
 if not rawget(Config,"_CompatMode") then Config._CompatMode=false end
 task.defer(function() if Config._CompatMode then applyCompat(true) end end)
@@ -1235,7 +1223,6 @@ do
         Config._NoGrass=true;    applyGrass(true)
         Config._NoParticles=true; applyNoParticles(true)
         Config._NoTextures=true; applyNoTextures(true)
-        Config._LowQuality=true; applyLowQuality(true)
         Config._CompatMode=true; applyCompat(true)
         refreshAllToggles(); saveConfig()
         allBtn.Text="✅ Aplicado!"
@@ -2169,9 +2156,8 @@ end)
 
 print("[SYY toop] Loaded — "..player.Name)
 
--- Reducir calidad de render en móvil para mejorar FPS
+-- Ajustes livianos en móvil sin forzar Render/Graphics Level 1
 if isMobile then
-    pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
     pcall(function() settings().Rendering.EnableFRM = false end)
     pcall(function()
         local lighting = game:GetService("Lighting")
