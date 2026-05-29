@@ -49,7 +49,8 @@ local DefaultConfig = {
     UniversalSAEnabled=false,
     Whitelist={},
     _UnlockFps=false, _DisablePostFx=false, _GraySky=false,
-    _NoShadows=false, _NoGrass=false, _LowQuality=false, _CompatMode=false,
+    _NoShadows=false, _NoGrass=false, _NoParticles=false, _NoTextures=false,
+    _LowQuality=false, _CompatMode=false,
 }
 local Config = {}
 local function deepCopy(t)
@@ -982,17 +983,20 @@ local _savedPP = {}
 local function applyPostFx(disable)
     if disable then
         local function strip(parent)
+            if not parent then return end
             for _,v in ipairs(parent:GetDescendants()) do
                 if v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect")
                 or v:IsA("BloomEffect") or v:IsA("SunRaysEffect")
                 or v:IsA("DepthOfFieldEffect") then
-                    _savedPP[v]=v.Enabled; v.Enabled=false
+                    if _savedPP[v] == nil then _savedPP[v]=v.Enabled end
+                    v.Enabled=false
                 end
             end
         end
-        strip(Lighting); strip(game:GetService("Workspace"))
+        strip(Lighting)
+        strip(camera)
     else
-        for obj,state in pairs(_savedPP) do pcall(function() obj.Enabled=state end) end
+        for obj,state in pairs(_savedPP) do pcall(function() if obj.Parent then obj.Enabled=state end end) end
         _savedPP={}
     end
 end
@@ -1000,56 +1004,49 @@ end
 local _savedLighting = {}
 local _origSky = nil
 local _origAtm = nil
+local _origSkyParent = nil
+local _origAtmParent = nil
+local _graySkyApplied = false
 local function applyGraySky(on)
     if on then
-        -- Guardar Lighting
+        if _graySkyApplied then return end
+        _graySkyApplied = true
+        _savedLighting = {}
         for _,k in ipairs({"Ambient","OutdoorAmbient","Brightness","ClockTime",
-            "FogEnd","FogStart","ColorShift_Bottom","ColorShift_Top"}) do
+            "FogEnd","FogStart","FogColor","ColorShift_Bottom","ColorShift_Top"}) do
             pcall(function() _savedLighting[k]=Lighting[k] end)
         end
-        -- Quitar Sky y Atmosphere originales
+
+        local old = Lighting:FindFirstChild("SyyGraySky")
+        if old then old:Destroy() end
+
         _origSky = Lighting:FindFirstChildOfClass("Sky")
-        if _origSky then _origSky.Parent=game:GetService("ReplicatedStorage") end
+        _origSkyParent = _origSky and _origSky.Parent or nil
+        if _origSky then _origSky.Parent=nil end
         _origAtm = Lighting:FindFirstChildOfClass("Atmosphere")
-        if _origAtm then _origAtm.Parent=game:GetService("ReplicatedStorage") end
-        -- Deshabilitar efectos de Lighting
-        for _,v in ipairs(Lighting:GetChildren()) do
-            if v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect")
-            or v:IsA("BloomEffect") or v:IsA("SunRaysEffect")
-            or v:IsA("DepthOfFieldEffect") then v.Enabled=false end
-        end
-        -- Lighting plano gris
+        _origAtmParent = _origAtm and _origAtm.Parent or nil
+        if _origAtm then _origAtm.Parent=nil end
+
+        -- Cielo gris liviano: sin skybox/texturas externas y sin tocar PostFX.
         pcall(function()
-            Lighting.Ambient             = Color3.fromRGB(180,180,180)
-            Lighting.OutdoorAmbient      = Color3.fromRGB(180,180,180)
-            Lighting.Brightness          = 2
+            Lighting.Ambient             = Color3.fromRGB(175,175,175)
+            Lighting.OutdoorAmbient      = Color3.fromRGB(175,175,175)
+            Lighting.Brightness          = 1.5
             Lighting.ClockTime           = 14
+            Lighting.FogColor            = Color3.fromRGB(175,175,175)
             Lighting.FogEnd              = 100000
             Lighting.FogStart            = 0
             Lighting.ColorShift_Bottom   = Color3.fromRGB(0,0,0)
             Lighting.ColorShift_Top      = Color3.fromRGB(0,0,0)
         end)
-        -- Sky gris (textura gris sólida de Roblox)
-        local old = Lighting:FindFirstChild("SyyGraySky")
-        if old then old:Destroy() end
-        local gs = Instance.new("Sky")
-        gs.Name = "SyyGraySky"
-        local grayTex = "rbxassetid://6372755229"
-        gs.SkyboxBk=grayTex; gs.SkyboxDn=grayTex; gs.SkyboxFt=grayTex
-        gs.SkyboxLf=grayTex; gs.SkyboxRt=grayTex; gs.SkyboxUp=grayTex
-        gs.SunAngularSize=0; gs.MoonAngularSize=0; gs.StarCount=0
-        gs.Parent=Lighting
     else
+        if not _graySkyApplied then return end
+        _graySkyApplied = false
         local gs=Lighting:FindFirstChild("SyyGraySky"); if gs then gs:Destroy() end
-        if _origSky then _origSky.Parent=Lighting; _origSky=nil end
-        if _origAtm then _origAtm.Parent=Lighting; _origAtm=nil end
+        if _origSky then _origSky.Parent=_origSkyParent or Lighting; _origSky=nil; _origSkyParent=nil end
+        if _origAtm then _origAtm.Parent=_origAtmParent or Lighting; _origAtm=nil; _origAtmParent=nil end
         for k,v in pairs(_savedLighting) do pcall(function() Lighting[k]=v end) end
         _savedLighting={}
-        for _,v in ipairs(Lighting:GetChildren()) do
-            if v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect")
-            or v:IsA("BloomEffect") or v:IsA("SunRaysEffect")
-            or v:IsA("DepthOfFieldEffect") then v.Enabled=true end
-        end
     end
 end
 
@@ -1062,6 +1059,102 @@ local function applyGrass(off)
         local ws=game:GetService("Workspace")
         if ws.Terrain then ws.Terrain.Decoration = not off end
     end)
+end
+
+local function runWorldChunked(fn, activeFlag)
+    task.spawn(function()
+        local ok, list = pcall(function() return Workspace:GetDescendants() end)
+        if not ok or not list then return end
+        for i,obj in ipairs(list) do
+            if activeFlag and not activeFlag() then return end
+            pcall(fn,obj)
+            if i%250==0 then task.wait() end
+        end
+    end)
+end
+
+local _savedParticles = {}
+local _particlesConn = nil
+local _particlesOn = false
+local function setParticleOff(obj)
+    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
+    or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+        if _savedParticles[obj] == nil then _savedParticles[obj]=obj.Enabled end
+        obj.Enabled=false
+    elseif obj:IsA("Explosion") then
+        local ok,val=pcall(function() return obj.Visible end)
+        if ok then _savedParticles[obj]=val; pcall(function() obj.Visible=false end) end
+    end
+end
+local function applyNoParticles(on)
+    _particlesOn = on
+    if _particlesConn then _particlesConn:Disconnect(); _particlesConn=nil end
+    if on then
+        runWorldChunked(setParticleOff,function() return _particlesOn end)
+        _particlesConn = Workspace.DescendantAdded:Connect(function(obj)
+            if _particlesOn then pcall(setParticleOff,obj) end
+        end)
+    else
+        for obj,state in pairs(_savedParticles) do
+            pcall(function()
+                if obj.Parent then
+                    if obj:IsA("Explosion") then obj.Visible=state else obj.Enabled=state end
+                end
+            end)
+        end
+        _savedParticles={}
+    end
+end
+
+local _savedTextureProps = {}
+local _texturesConn = nil
+local _texturesOn = false
+local function saveObjProp(obj, prop)
+    local bag=_savedTextureProps[obj]
+    if not bag then bag={}; _savedTextureProps[obj]=bag end
+    if bag[prop] == nil then
+        local ok,val=pcall(function() return obj[prop] end)
+        if ok then bag[prop]=val; return true end
+        return false
+    end
+    return true
+end
+local function flattenTexture(obj)
+    if obj:IsA("Decal") or obj:IsA("Texture") then
+        if saveObjProp(obj,"Transparency") then obj.Transparency=1 end
+    elseif obj:IsA("MeshPart") then
+        if saveObjProp(obj,"Material") then obj.Material=Enum.Material.SmoothPlastic end
+        if saveObjProp(obj,"Reflectance") then obj.Reflectance=0 end
+        if saveObjProp(obj,"TextureID") then pcall(function() obj.TextureID="" end) end
+    elseif obj:IsA("SpecialMesh") then
+        if saveObjProp(obj,"TextureId") then obj.TextureId="" end
+    elseif obj:IsA("SurfaceAppearance") then
+        for _,prop in ipairs({"ColorMap","MetalnessMap","NormalMap","RoughnessMap"}) do
+            if saveObjProp(obj,prop) then pcall(function() obj[prop]="" end) end
+        end
+    elseif obj:IsA("BasePart") then
+        if saveObjProp(obj,"Material") then obj.Material=Enum.Material.SmoothPlastic end
+        if saveObjProp(obj,"Reflectance") then obj.Reflectance=0 end
+    end
+end
+local function applyNoTextures(on)
+    _texturesOn = on
+    if _texturesConn then _texturesConn:Disconnect(); _texturesConn=nil end
+    if on then
+        runWorldChunked(flattenTexture,function() return _texturesOn end)
+        _texturesConn = Workspace.DescendantAdded:Connect(function(obj)
+            if _texturesOn then pcall(flattenTexture,obj) end
+        end)
+    else
+        for obj,props in pairs(_savedTextureProps) do
+            pcall(function()
+                if obj.Parent then
+                    for prop,val in pairs(props) do obj[prop]=val end
+                end
+            end)
+        end
+        _savedTextureProps={}
+    end
 end
 
 local function applyLowQuality(on)
@@ -1103,12 +1196,22 @@ makeToggle(pageExt,"🌿 Sin Hierba","_NoGrass",function(on) applyGrass(on) end)
 if not rawget(Config,"_NoGrass") then Config._NoGrass=false end
 task.defer(function() if Config._NoGrass then applyGrass(true) end end)
 
--- ── 6. Calidad Mínima
+-- ── 6. Sin Partículas / efectos del mundo
+makeToggle(pageExt,"✨ Sin Partículas","_NoParticles",function(on) applyNoParticles(on) end)
+if not rawget(Config,"_NoParticles") then Config._NoParticles=false end
+task.defer(function() if Config._NoParticles then applyNoParticles(true) end end)
+
+-- ── 7. Sin Texturas / materiales pesados
+makeToggle(pageExt,"🧱 Sin Texturas","_NoTextures",function(on) applyNoTextures(on) end)
+if not rawget(Config,"_NoTextures") then Config._NoTextures=false end
+task.defer(function() if Config._NoTextures then applyNoTextures(true) end end)
+
+-- ── 8. Calidad Mínima
 makeToggle(pageExt,"📉 Calidad Mínima (L1)","_LowQuality",function(on) applyLowQuality(on) end)
 if not rawget(Config,"_LowQuality") then Config._LowQuality=false end
 task.defer(function() if Config._LowQuality then applyLowQuality(true) end end)
 
--- ── 7. Modo Compatibilidad
+-- ── 9. Modo Compatibilidad
 makeToggle(pageExt,"🖥 Modo Compatibilidad","_CompatMode",function(on) applyCompat(on) end)
 if not rawget(Config,"_CompatMode") then Config._CompatMode=false end
 task.defer(function() if Config._CompatMode then applyCompat(true) end end)
@@ -1130,6 +1233,8 @@ do
         Config._GraySky=true;    applyGraySky(true)
         Config._NoShadows=true;  applyShadows(true)
         Config._NoGrass=true;    applyGrass(true)
+        Config._NoParticles=true; applyNoParticles(true)
+        Config._NoTextures=true; applyNoTextures(true)
         Config._LowQuality=true; applyLowQuality(true)
         Config._CompatMode=true; applyCompat(true)
         refreshAllToggles(); saveConfig()
