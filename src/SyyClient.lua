@@ -48,7 +48,7 @@ local DefaultConfig = {
     TeamCheckEnabled=false,
     UniversalSAEnabled=false,
     Whitelist={},
-    _UnlockFps=false, _DisablePostFx=false, _GraySky=false,
+    _UnlockFps=false, _StableFps=60, _DisablePostFx=false, _GraySky=false,
     _NoShadows=false, _NoGrass=false, _NoParticles=false, _NoTextures=false,
     _CompatMode=false,
 }
@@ -969,9 +969,11 @@ local Lighting = game:GetService("Lighting")
 
 -- ── Funciones a nivel módulo para que el botón "todo ON" las llame ──
 
-local function applyFpsUnlock(on)
-    if setfpscap then pcall(function() setfpscap(60) end)
-    elseif setframerate then pcall(function() setframerate(60) end) end
+local function applyStableFps(cap)
+    cap = tonumber(cap) or 60
+    cap = math.clamp(math.floor(cap), 30, 60)
+    if setfpscap then pcall(function() setfpscap(cap) end)
+    elseif setframerate then pcall(function() setframerate(cap) end) end
 end
 
 local _savedPP = {}
@@ -1056,14 +1058,17 @@ local function applyGrass(off)
     end)
 end
 
-local function runWorldChunked(fn, activeFlag)
+local function runWorldChunked(fn, activeFlag, chunkSize, waitTime)
+    chunkSize = chunkSize or 90
     task.spawn(function()
         local ok, list = pcall(function() return Workspace:GetDescendants() end)
         if not ok or not list then return end
         for i,obj in ipairs(list) do
             if activeFlag and not activeFlag() then return end
             pcall(fn,obj)
-            if i%250==0 then task.wait() end
+            if i%chunkSize==0 then
+                if waitTime then task.wait(waitTime) else task.wait() end
+            end
         end
     end)
 end
@@ -1085,7 +1090,7 @@ local function applyNoParticles(on)
     _particlesOn = on
     if _particlesConn then _particlesConn:Disconnect(); _particlesConn=nil end
     if on then
-        runWorldChunked(setParticleOff,function() return _particlesOn end)
+        runWorldChunked(setParticleOff,function() return _particlesOn end,120)
         _particlesConn = Workspace.DescendantAdded:Connect(function(obj)
             if _particlesOn then pcall(setParticleOff,obj) end
         end)
@@ -1136,7 +1141,7 @@ local function applyNoTextures(on)
     _texturesOn = on
     if _texturesConn then _texturesConn:Disconnect(); _texturesConn=nil end
     if on then
-        runWorldChunked(flattenTexture,function() return _texturesOn end)
+        runWorldChunked(flattenTexture,function() return _texturesOn end,70,0.03)
         _texturesConn = Workspace.DescendantAdded:Connect(function(obj)
             if _texturesOn then pcall(flattenTexture,obj) end
         end)
@@ -1159,7 +1164,12 @@ local function applyCompat(on)
     end)
 end
 
--- ── 1. Disable PostFX
+-- ── 1. FPS estable
+makeSlider(pageExt,"FPS Estable","_StableFps",30,60,function(v) applyStableFps(v) end)
+if not rawget(Config,"_StableFps") then Config._StableFps=60 end
+task.defer(function() applyStableFps(Config._StableFps) end)
+
+-- ── 2. Disable PostFX
 makeToggle(pageExt,"🚫 Disable PostFX","_DisablePostFx",function(on) applyPostFx(on) end)
 if not rawget(Config,"_DisablePostFx") then Config._DisablePostFx=false end
 task.defer(function() if Config._DisablePostFx then applyPostFx(true) end end)
@@ -1194,6 +1204,31 @@ makeToggle(pageExt,"🖥 Modo Compatibilidad","_CompatMode",function(on) applyCo
 if not rawget(Config,"_CompatMode") then Config._CompatMode=false end
 task.defer(function() if Config._CompatMode then applyCompat(true) end end)
 
+-- ── Preset móvil estable: no toca Sin Texturas porque puede tirar al activarlo ──
+do
+    local mobileBtn=Instance.new("TextButton")
+    mobileBtn.Size=UDim2.new(1,0,0,ROW_H+4)
+    mobileBtn.BackgroundColor3=Color3.fromRGB(0,35,45)
+    mobileBtn.BorderSizePixel=0
+    mobileBtn.Text="📱 MODO LG G8 ESTABLE"
+    mobileBtn.TextColor3=Color3.fromRGB(80,220,255)
+    mobileBtn.Font=Enum.Font.GothamBold
+    mobileBtn.TextSize=TXT_SIZE; mobileBtn.AutoButtonColor=false; mobileBtn.Parent=pageExt
+    stroke(mobileBtn,Color3.fromRGB(0,120,170),1)
+    mobileBtn.MouseButton1Click:Connect(function()
+        Config._UnlockFps=false
+        Config._DisablePostFx=true; applyPostFx(true)
+        Config._NoShadows=true;  applyShadows(true)
+        Config._NoGrass=true;    applyGrass(true)
+        Config._NoParticles=true; applyNoParticles(true)
+        Config._CompatMode=true; applyCompat(true)
+        applyStableFps(Config._StableFps)
+        refreshAllToggles(); saveConfig()
+        mobileBtn.Text="✅ LG G8 Estable aplicado"
+        task.delay(2,function() mobileBtn.Text="📱 MODO LG G8 ESTABLE" end)
+    end)
+end
+
 -- ── Botón: todo ON de golpe ───────────────────────────────────
 do
     local allBtn=Instance.new("TextButton")
@@ -1206,7 +1241,7 @@ do
     allBtn.TextSize=TXT_SIZE; allBtn.AutoButtonColor=false; allBtn.Parent=pageExt
     stroke(allBtn,Color3.fromRGB(40,160,80),1)
     allBtn.MouseButton1Click:Connect(function()
-        Config._UnlockFps=false; applyFpsUnlock(false)
+        Config._UnlockFps=false; applyStableFps(Config._StableFps)
         Config._DisablePostFx=true; applyPostFx(true)
         Config._GraySky=true;    applyGraySky(true)
         Config._NoShadows=true;  applyShadows(true)
@@ -2148,7 +2183,6 @@ print("[SYY toop] Loaded — "..player.Name)
 
 -- Ajustes livianos en móvil sin forzar Render/Graphics Level 1
 if isMobile then
-    pcall(function() settings().Rendering.EnableFRM = false end)
     pcall(function()
         local lighting = game:GetService("Lighting")
         lighting.GlobalShadows = false
