@@ -363,6 +363,8 @@ UserInputService.InputEnded:Connect(function(inp)
         if _activeSlide then _activeSlide=nil end
     end
 end)
+
+local function makeSection(page,text)
     local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,isMobile and 20 or 16)
     f.BackgroundTransparency=1; f.Parent=page
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,0,1,0); l.BackgroundTransparency=1
