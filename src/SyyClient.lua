@@ -970,13 +970,8 @@ local Lighting = game:GetService("Lighting")
 -- ── Funciones a nivel módulo para que el botón "todo ON" las llame ──
 
 local function applyFpsUnlock(on)
-    if on then
-        if setfpscap then pcall(function() setfpscap(999) end)
-        elseif setframerate then pcall(function() setframerate(999) end) end
-    else
-        if setfpscap then pcall(function() setfpscap(60) end)
-        elseif setframerate then pcall(function() setframerate(60) end) end
-    end
+    if setfpscap then pcall(function() setfpscap(60) end)
+    elseif setframerate then pcall(function() setframerate(60) end) end
 end
 
 local _savedPP = {}
@@ -1164,12 +1159,7 @@ local function applyCompat(on)
     end)
 end
 
--- ── 1. Unlock FPS
-makeToggle(pageExt,"🎯 Unlock FPS (999)","_UnlockFps",function(on) applyFpsUnlock(on) end)
-if not rawget(Config,"_UnlockFps") then Config._UnlockFps=false end
-task.defer(function() if Config._UnlockFps then applyFpsUnlock(true) end end)
-
--- ── 2. Disable PostFX
+-- ── 1. Disable PostFX
 makeToggle(pageExt,"🚫 Disable PostFX","_DisablePostFx",function(on) applyPostFx(on) end)
 if not rawget(Config,"_DisablePostFx") then Config._DisablePostFx=false end
 task.defer(function() if Config._DisablePostFx then applyPostFx(true) end end)
@@ -1216,7 +1206,7 @@ do
     allBtn.TextSize=TXT_SIZE; allBtn.AutoButtonColor=false; allBtn.Parent=pageExt
     stroke(allBtn,Color3.fromRGB(40,160,80),1)
     allBtn.MouseButton1Click:Connect(function()
-        Config._UnlockFps=true;  applyFpsUnlock(true)
+        Config._UnlockFps=false; applyFpsUnlock(false)
         Config._DisablePostFx=true; applyPostFx(true)
         Config._GraySky=true;    applyGraySky(true)
         Config._NoShadows=true;  applyShadows(true)
