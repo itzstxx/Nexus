@@ -372,6 +372,7 @@ local function makeSection(page,text)
     l.TextSize=SEC_SIZE; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=f
     return f
 end
+local secLabel = makeSection  -- alias usado en los tabs
 
 local function makeToggle(page,text,key,cb)
     local row=Instance.new("Frame")
@@ -1129,8 +1130,9 @@ end
 do
     local drag,dragStart,startPos=false,nil,nil
     local dh=Instance.new("TextButton")
-    dh.Size=UDim2.new(1,0,0,headerH); dh.BackgroundTransparency=1
-    dh.Text=""; dh.ZIndex=5; dh.Parent=main
+    dh.Size=UDim2.new(1,0,0,headerH); dh.Position=UDim2.fromOffset(0,0)
+    dh.BackgroundTransparency=1
+    dh.Text=""; dh.ZIndex=10; dh.Parent=main
     dh.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1
         or inp.UserInputType==Enum.UserInputType.Touch then
