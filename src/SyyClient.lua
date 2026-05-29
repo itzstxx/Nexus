@@ -48,6 +48,8 @@ local DefaultConfig = {
     TeamCheckEnabled=false,
     UniversalSAEnabled=false,
     Whitelist={},
+    _UnlockFps=false, _DisablePostFx=false, _GraySky=false,
+    _NoShadows=false, _NoGrass=false, _LowQuality=false, _CompatMode=false,
 }
 local Config = {}
 local function deepCopy(t)
@@ -956,6 +958,210 @@ task.defer(function()
         hookStamina(player.Character or player.CharacterAdded:Wait())
     end
 end)
+
+-- ══════════════════════════════════════════════════════════════
+-- TAB 3 (cont.): RENDIMIENTO / FASTFLAGS
+-- ══════════════════════════════════════════════════════════════
+secLabel(pageExt,"⚡ Rendimiento")
+
+-- helpers internos
+local Lighting = game:GetService("Lighting")
+local function setFFlag(flag,val)
+    pcall(function() settings()[flag]=val end)
+end
+
+-- ── 1. Unlock FPS ────────────────────────────────────────────
+do
+    local unlockFps = false
+    local fpsConn   = nil
+    local function applyFpsUnlock(on)
+        unlockFps = on
+        if on then
+            -- En ejecutores modernos existe setfpscap / setframerate
+            if setfpscap then pcall(function() setfpscap(999) end)
+            elseif setframerate then pcall(function() setframerate(999) end)
+            else
+                -- Fallback: loop vacío para mantener despierto el scheduler
+                if fpsConn then fpsConn:Disconnect() end
+                fpsConn = RunService.RenderStepped:Connect(function() end)
+            end
+        else
+            if setfpscap then pcall(function() setfpscap(60) end)
+            elseif setframerate then pcall(function() setframerate(60) end) end
+            if fpsConn then fpsConn:Disconnect(); fpsConn=nil end
+        end
+    end
+    makeToggle(pageExt,"🎯 Unlock FPS (999)","_UnlockFps",function(on)
+        applyFpsUnlock(on)
+    end)
+    -- key ficticia — manejamos el estado por separado
+    if not rawget(Config,"_UnlockFps") then Config._UnlockFps=false end
+end
+
+-- ── 2. Disable PostFX ────────────────────────────────────────
+do
+    local savedPP = {}
+    local function applyPostFx(disable)
+        if disable then
+            for _,v in ipairs(Lighting:GetDescendants()) do
+                if v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect")
+                or v:IsA("BloomEffect") or v:IsA("SunRaysEffect")
+                or v:IsA("DepthOfFieldEffect") then
+                    savedPP[v]=v.Enabled; v.Enabled=false
+                end
+            end
+            -- También las de Workspace
+            for _,v in ipairs(game:GetService("Workspace"):GetDescendants()) do
+                if v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect")
+                or v:IsA("BloomEffect") or v:IsA("SunRaysEffect")
+                or v:IsA("DepthOfFieldEffect") then
+                    savedPP[v]=v.Enabled; v.Enabled=false
+                end
+            end
+        else
+            for obj,state in pairs(savedPP) do
+                pcall(function() obj.Enabled=state end)
+            end
+            savedPP={}
+        end
+    end
+    makeToggle(pageExt,"🚫 Disable PostFX","_DisablePostFx",function(on)
+        applyPostFx(on)
+    end)
+    if not rawget(Config,"_DisablePostFx") then Config._DisablePostFx=false end
+    task.defer(function() if Config._DisablePostFx then applyPostFx(true) end end)
+end
+
+-- ── 3. Cielo Gris (Sky Override) ────────────────────────────
+do
+    local origSky  = nil
+    local graySky  = nil
+    local function applyGraySky(on)
+        if on then
+            -- Guardar y ocultar cielo original
+            origSky = Lighting:FindFirstChildOfClass("Sky")
+            if origSky then origSky.Parent=game:GetService("ReplicatedStorage") end
+            -- Crear cielo gris neutro
+            if not graySky then
+                graySky=Instance.new("Sky")
+                graySky.SkyboxBk="rbxasset://textures/sky/sky512_bk.tex"
+                graySky.SkyboxDn="rbxasset://textures/sky/sky512_dn.tex"
+                graySky.SkyboxFt="rbxasset://textures/sky/sky512_ft.tex"
+                graySky.SkyboxLf="rbxasset://textures/sky/sky512_lf.tex"
+                graySky.SkyboxRt="rbxasset://textures/sky/sky512_rt.tex"
+                graySky.SkyboxUp="rbxasset://textures/sky/sky512_up.tex"
+            end
+            -- Poner override de color gris
+            Lighting.Ambient       = Color3.fromRGB(128,128,128)
+            Lighting.OutdoorAmbient= Color3.fromRGB(128,128,128)
+            Lighting.Brightness    = 0.5
+            Lighting.FogEnd        = 100000
+            Lighting.FogStart      = 100000
+            graySky.Parent=Lighting
+        else
+            if graySky then graySky.Parent=nil end
+            if origSky then
+                origSky.Parent=Lighting
+                origSky=nil
+            end
+            -- Restaurar valores de Lighting por defecto
+            Lighting.Ambient       = Color3.fromRGB(70,70,70)
+            Lighting.OutdoorAmbient= Color3.fromRGB(128,128,128)
+            Lighting.Brightness    = 2
+            Lighting.FogEnd        = 100000
+            Lighting.FogStart      = 0
+        end
+    end
+    makeToggle(pageExt,"🌫 Cielo Gris","_GraySky",function(on)
+        applyGraySky(on)
+    end)
+    if not rawget(Config,"_GraySky") then Config._GraySky=false end
+    task.defer(function() if Config._GraySky then applyGraySky(true) end end)
+end
+
+-- ── 4. Sin Sombras ───────────────────────────────────────────
+do
+    local function applyShadows(off)
+        pcall(function() Lighting.GlobalShadows = not off end)
+    end
+    makeToggle(pageExt,"🌑 Sin Sombras","_NoShadows",function(on)
+        applyShadows(on)
+    end)
+    if not rawget(Config,"_NoShadows") then Config._NoShadows=false end
+    task.defer(function() if Config._NoShadows then applyShadows(true) end end)
+end
+
+-- ── 5. Sin Hierba ────────────────────────────────────────────
+do
+    local function applyGrass(off)
+        pcall(function()
+            local ws=game:GetService("Workspace")
+            if ws.Terrain then
+                ws.Terrain.Decoration = not off
+            end
+        end)
+    end
+    makeToggle(pageExt,"🌿 Sin Hierba","_NoGrass",function(on)
+        applyGrass(on)
+    end)
+    if not rawget(Config,"_NoGrass") then Config._NoGrass=false end
+    task.defer(function() if Config._NoGrass then applyGrass(true) end end)
+end
+
+-- ── 6. Calidad mínima ────────────────────────────────────────
+do
+    local function applyLowQuality(on)
+        pcall(function()
+            if on then
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+            else
+                settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+            end
+        end)
+    end
+    makeToggle(pageExt,"📉 Calidad Mínima (L1)","_LowQuality",function(on)
+        applyLowQuality(on)
+    end)
+    if not rawget(Config,"_LowQuality") then Config._LowQuality=false end
+    task.defer(function() if Config._LowQuality then applyLowQuality(true) end end)
+end
+
+-- ── 7. Modo Compatibilidad (Technology) ──────────────────────
+do
+    local function applyCompat(on)
+        pcall(function()
+            if on then
+                Lighting.Technology = Enum.Technology.Compatibility
+            else
+                Lighting.Technology = Enum.Technology.ShadowMap
+            end
+        end)
+    end
+    makeToggle(pageExt,"🖥 Modo Compatibilidad","_CompatMode",function(on)
+        applyCompat(on)
+    end)
+    if not rawget(Config,"_CompatMode") then Config._CompatMode=false end
+    task.defer(function() if Config._CompatMode then applyCompat(true) end end)
+end
+
+-- ── Botón: Aplicar TODO de una vez ───────────────────────────
+do
+    local allBtn=Instance.new("TextButton")
+    allBtn.Size=UDim2.new(1,0,0,ROW_H+4)
+    allBtn.BackgroundColor3=Color3.fromRGB(0,40,20)
+    allBtn.BorderSizePixel=0
+    allBtn.Text="⚡ MÁXIMO RENDIMIENTO (todo ON)"
+    allBtn.TextColor3=Color3.fromRGB(80,255,140)
+    allBtn.Font=Enum.Font.GothamBold
+    allBtn.TextSize=TXT_SIZE; allBtn.AutoButtonColor=false; allBtn.Parent=pageExt
+    stroke(allBtn,Color3.fromRGB(40,160,80),1)
+    allBtn.MouseButton1Click:Connect(function()
+        local keys={"_UnlockFps","_DisablePostFx","_GraySky","_NoShadows","_NoGrass","_LowQuality","_CompatMode"}
+        for _,k in ipairs(keys) do Config[k]=true end
+        refreshAllToggles(); saveConfig()
+        allBtn.Text="✅ Aplicado!"; task.delay(2,function() allBtn.Text="⚡ MÁXIMO RENDIMIENTO (todo ON)" end)
+    end)
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 4: SETTINGS
