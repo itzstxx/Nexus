@@ -116,6 +116,7 @@ gui.Parent=playerGui
 
 local streamModeOn=false
 local streamTouchToken=nil
+local _streamHidden=false
 local streamSaved={EspEnabled=nil,FovEnabled=nil,Snapline=nil,ItemInHand=nil}
 local function applyStreamMode(on)
     on = on and true or false
@@ -346,7 +347,22 @@ local TOG_W     = isMobile and 48 or 36
 local TOG_H     = isMobile and 24 or 18
 local DOT_SZ    = isMobile and 18 or 14
 
-local function secLabel(page,text)
+-- ── SLIDER INPUT GLOBAL — UN SOLO InputChanged para todos los sliders ──
+-- Antes: cada slider creaba su propio .InputChanged → 15+ conexiones disparando
+-- cada movimiento del dedo. Ahora: una sola conexión global O(1).
+local _activeSlide = nil  -- función activa mientras se arrastra
+UserInputService.InputChanged:Connect(function(inp)
+    if _activeSlide and (inp.UserInputType==Enum.UserInputType.MouseMovement
+    or inp.UserInputType==Enum.UserInputType.Touch) then
+        _activeSlide(inp)
+    end
+end)
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType==Enum.UserInputType.MouseButton1
+    or inp.UserInputType==Enum.UserInputType.Touch then
+        if _activeSlide then _activeSlide=nil end
+    end
+end)
     local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,isMobile and 20 or 16)
     f.BackgroundTransparency=1; f.Parent=page
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,0,1,0); l.BackgroundTransparency=1
@@ -436,16 +452,21 @@ local function makeSlider(page,text,key,mn,mx,cb)
     end
     track.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1
-        or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
+        or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; _activeSlide=slide; slide(inp) end
     end)
-    UserInputService.InputChanged:Connect(function(inp)
-        if sliding and (inp.UserInputType==Enum.UserInputType.MouseMovement
-        or inp.UserInputType==Enum.UserInputType.Touch) then slide(inp) end
-    end)
-    UserInputService.InputEnded:Connect(function(inp)
+    -- InputChanged y InputEnded manejados por el dispatcher global
+    -- (se limpia _activeSlide en el InputEnded global, y llama saveConfig)
+    local _origActive=nil
+    track.InputBegan:Connect(function(inp)
         if inp.UserInputType==Enum.UserInputType.MouseButton1
         or inp.UserInputType==Enum.UserInputType.Touch then
-            if sliding then sliding=false; saveConfig() end
+            _origActive=_activeSlide
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if sliding and (inp.UserInputType==Enum.UserInputType.MouseButton1
+        or inp.UserInputType==Enum.UserInputType.Touch) then
+            sliding=false; _activeSlide=nil; saveConfig()
         end
     end)
     return row
@@ -526,23 +547,18 @@ local function makeColorRow(page,text,rk,gk,bk)
 
         local sliding=false
         local function slide(inp)
-            -- Usamos la posición del track calculada en tiempo de ejecución
             local abs=track.AbsolutePosition; local sz=track.AbsoluteSize
             if sz.X<=0 then return end
             setVal(math.clamp((inp.Position.X-abs.X)/sz.X,0,1)*255)
         end
         hitT.InputBegan:Connect(function(inp)
             if inp.UserInputType==Enum.UserInputType.MouseButton1
-            or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; slide(inp) end
-        end)
-        UserInputService.InputChanged:Connect(function(inp)
-            if sliding and (inp.UserInputType==Enum.UserInputType.MouseMovement
-            or inp.UserInputType==Enum.UserInputType.Touch) then slide(inp) end
+            or inp.UserInputType==Enum.UserInputType.Touch then sliding=true; _activeSlide=slide; slide(inp) end
         end)
         UserInputService.InputEnded:Connect(function(inp)
             if inp.UserInputType==Enum.UserInputType.MouseButton1
             or inp.UserInputType==Enum.UserInputType.Touch then
-                if sliding then sliding=false; saveConfig() end
+                if sliding then sliding=false; _activeSlide=nil; saveConfig() end
             end
         end)
     end
@@ -900,7 +916,7 @@ local function hookStamina(char)
                 end
                 keepStaminaAttributes(c2)
             end)
-            task.wait(0.01)
+            task.wait(0.05)  -- antes 0.01 (100/s) → ahora 20/s, indetectable
         end
     end)
 
@@ -1159,20 +1175,19 @@ task.delay(2, function()
     end
 end)
 
--- pulse animation on FAB
-task.spawn(function()
+-- pulse animation on FAB — un solo tween almacenado, no crea nuevos cada 0.9s
+do
     local fabStroke=fab:FindFirstChildOfClass("UIStroke")
-    while fab.Parent do
-        if fabStroke then
-            TweenService:Create(fabStroke,TweenInfo.new(0.9,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{Transparency=0.6}):Play()
+    if fabStroke then
+        local pulseOut=TweenService:Create(fabStroke,TweenInfo.new(0.9,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut,0,true,0),{Transparency=0.65})
+        local function pulseTick()
+            pulseOut:Play()
         end
-        task.wait(0.9)
-        if fabStroke then
-            TweenService:Create(fabStroke,TweenInfo.new(0.9,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{Transparency=0}):Play()
-        end
-        task.wait(0.9)
+        task.spawn(function()
+            while fab.Parent do pulseTick(); task.wait(1.85) end
+        end)
     end
-end)
+end
 
 do
     local fabDrag,fabDragStart,fabStartPos=false,nil,nil
@@ -1274,17 +1289,20 @@ UserInputService.InputEnded:Connect(function(inp)
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- SCANLINE ANIM (ligera, 2s)
+-- SCANLINE ANIM — un solo tween repetido, no crea objetos cada 1.4s
 -- ══════════════════════════════════════════════════════════════
-task.spawn(function()
-    while gui.Parent do
-        TweenService:Create(scanLine,TweenInfo.new(1.4,Enum.EasingStyle.Linear),
-            {Position=UDim2.fromOffset(0,panelH),BackgroundTransparency=0.9}):Play()
-        task.wait(1.4)
-        scanLine.Position=UDim2.fromOffset(0,0); scanLine.BackgroundTransparency=0.5
-        task.wait(0.1)
+do
+    local scanTween=TweenService:Create(scanLine,
+        TweenInfo.new(1.5,Enum.EasingStyle.Linear,Enum.EasingDirection.Out,0,false,0),
+        {Position=UDim2.fromOffset(0,panelH),BackgroundTransparency=0.92})
+    local function restartScan()
+        scanLine.Position=UDim2.fromOffset(0,0)
+        scanLine.BackgroundTransparency=0.5
+        scanTween:Play()
     end
-end)
+    scanTween.Completed:Connect(restartScan)
+    restartScan()
+end
 
 -- ══════════════════════════════════════════════════════════════
 -- FLY  (LinearVelocity + AlignOrientation — no kickea)
@@ -1511,11 +1529,9 @@ RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, fu
 
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local bestRoot=nil; local bestDist=math.huge
 
-    local bestRoot=nil
-    local bestDist=math.huge
-
-    for _,p in ipairs(Players:GetPlayers()) do
+    for _,p in ipairs(_plrList) do
         if shouldSkip(p) then continue end
         local char=p.Character; if not char then continue end
         local hum=char:FindFirstChildOfClass("Humanoid")
@@ -1567,25 +1583,43 @@ local function _refreshColors()
     if Config.FovColorR~=_lfR  or Config.FovColorG~=_lfG  or Config.FovColorB~=_lfB  then _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB);_lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB end
 end
 local frame=0
+local _plrList={}  -- lista de jugadores cacheada, se actualiza con events
+local function _rebuildPlrList()
+    _plrList=Players:GetPlayers()
+end
+_rebuildPlrList()
+Players.PlayerAdded:Connect(_rebuildPlrList)
+Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
+
 RunService.RenderStepped:Connect(function()
     frame=frame+1
 
+    -- Cache por frame — evita llamadas repetidas a la misma API
+    local myChar=player.Character
+    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local vpSize=camera.ViewportSize
+    local center2D=Vector2.new(vpSize.X*0.5, vpSize.Y*0.5)
+
     -- ══ TARGET CACHE — corre SIEMPRE, incluso con stream mode ON ══
-    -- El hookmetamethod lee cachedTargetPos en cada raycast.
-    -- Si limpiamos el cache aquí, el silent aim no funciona.
     if frame%2==0 then
-        local chars={}
-        for _,p in ipairs(Players:GetPlayers()) do if p~=player and p.Character then table.insert(chars,p.Character) end end
-        wallbreakParams.FilterDescendantsInstances=chars
+        -- wallbreakParams solo necesita actualizarse si Manipulation está ON
+        if Config.Manipulation then
+            local chars={}
+            for _,p in ipairs(_plrList) do
+                if p~=player and p.Character then chars[#chars+1]=p.Character end
+            end
+            wallbreakParams.FilterDescendantsInstances=chars
+        end
 
         if Config.SilentAimEnabled then
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local center=center2D
             local bestD=math.huge; local bestPos=nil
-            local myChar2=player.Character
-            local myRoot2=myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
+            local myChar2=myChar
+            local myRoot2=myRoot
             local camLook=camera.CFrame.LookVector
+            local fovLimit = streamModeOn and math.huge or Config.FovRadius
 
-            for _,p in ipairs(Players:GetPlayers()) do
+            for _,p in ipairs(_plrList) do
                 if shouldSkip(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
@@ -1594,8 +1628,6 @@ RunService.RenderStepped:Connect(function()
 
                 local sp2,onS=camera:WorldToViewportPoint(root.Position)
                 local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
-                -- En stream mode no hay FOV visible: sin límite de radio
-                local fovLimit = streamModeOn and math.huge or Config.FovRadius
 
                 if Config.VisibleCheck then
                     if not onS then continue end
@@ -1640,9 +1672,9 @@ RunService.RenderStepped:Connect(function()
         if Config.NpcSilentAimEnabled then
             npcCacheFrame=npcCacheFrame+1
             if npcCacheFrame>=90 then npcCacheFrame=0; rebuildNpcCache() end
-            local center=Vector2.new(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+            local center=center2D
             local bestD=math.huge; cachedNpcPos=nil; npcSilentVisible=true
-            local myChar3=player.Character
+            local myChar3=myChar
             local npcFovLimit = streamModeOn and math.huge or Config.FovRadius
             for _,hum in ipairs(cachedNpcHumanoids) do
                 if not hum or not hum.Parent then continue end
@@ -1673,21 +1705,24 @@ RunService.RenderStepped:Connect(function()
     end
 
     -- ══ STREAM MODE — solo ocultar visuals, hacks siguen activos ══
-    -- Silent Aim, CamLock, TriggerBot, Fly, InfStamina = ON siempre.
-    -- Solo se ocultan ESP, FOV circle, Snapline y el panel GUI.
     if streamModeOn then
         fovCircle.Visible=false
         snapLineDraw.Visible=false
-        for p,obj in pairs(espObjects) do
-            obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
-            obj.healthBar.Visible=false; obj.healthBg.Visible=false
-            for _,l in ipairs(obj.skeleton) do l.Visible=false end
-            if itemDrawings[p] then itemDrawings[p].Visible=false end
+        -- Solo iterar espObjects en el PRIMER frame de stream mode
+        if not _streamHidden then
+            _streamHidden=true
+            for p,obj in pairs(espObjects) do
+                obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
+                obj.healthBar.Visible=false; obj.healthBg.Visible=false
+                for _,l in ipairs(obj.skeleton) do l.Visible=false end
+                if itemDrawings[p] then itemDrawings[p].Visible=false end
+            end
         end
         return
     end
+    _streamHidden=false
 
-    -- Actualizar colores cacheados (barato: solo recalcula si cambiaron)
+    -- Actualizar colores cacheados
     if frame%6==0 then _refreshColors() end
 
     -- FLY
@@ -1695,8 +1730,7 @@ RunService.RenderStepped:Connect(function()
         if Config.FlyEnabled then startFly() else stopFly() end
     end
     if Config.FlyEnabled and flyActive then
-        local char=player.Character
-        local root=char and char:FindFirstChild("HumanoidRootPart")
+        local root=myChar and myChar:FindFirstChild("HumanoidRootPart")
         local lv=root and root:FindFirstChild("SyyFlyLV")
         local ao=root and root:FindFirstChild("SyyFlyAO")
         if lv and ao then
@@ -1707,7 +1741,7 @@ RunService.RenderStepped:Connect(function()
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv=mv+camCF.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) or UserInputService:IsKeyDown(Enum.KeyCode.Q) then mv=mv+Vector3.yAxis end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.E) then mv=mv-Vector3.yAxis end
-            local hum2=char:FindFirstChildOfClass("Humanoid")
+            local hum2=myChar:FindFirstChildOfClass("Humanoid")
             if hum2 and hum2.MoveDirection.Magnitude>0.1 then
                 local wf=Vector3.new(hum2.MoveDirection.X,0,hum2.MoveDirection.Z)
                 if wf.Magnitude>0.01 then mv=mv+wf.Unit end
@@ -1717,39 +1751,25 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    local vpSize=camera.ViewportSize
-    local center2D=Vector2.new(vpSize.X/2,vpSize.Y/2)
-    local myChar=player.Character
-    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-    -- FOV Circle — se pone ROJO cuando el objetivo NPC está detrás de una pared
+    -- FOV Circle
     fovCircle.Visible=Config.FovEnabled and (Config.SilentAimEnabled or Config.CamLockEnabled or Config.TriggerBotEnabled or Config.NpcSilentAimEnabled)
     if fovCircle.Visible then
         fovCircle.Position=center2D; fovCircle.Radius=Config.FovRadius
-        -- Rojo si NPC detrás de pared, color normal en cualquier otro caso
-        if Config.NpcSilentAimEnabled and not npcSilentVisible then
-            fovCircle.Color=Color3.fromRGB(255,40,40)
-        else
-            fovCircle.Color=_fovCol
-        end
+        fovCircle.Color=(Config.NpcSilentAimEnabled and not npcSilentVisible) and Color3.fromRGB(255,40,40) or _fovCol
     end
 
-    -- TriggerBot: dispara cuando hay un objetivo en el FOV cache (kill check: health > 0)
-    -- FIJO: usa cachedTargetPos en vez de raycast natural + debounce propio
+    -- TriggerBot
     if Config.TriggerBotEnabled then
         local triggerTarget=nil
-        -- Primero intenta con silent aim cache (jugadores)
         if cachedTargetPos and Config.SilentAimEnabled then
             triggerTarget=cachedTargetPos
         else
-            -- Buscar jugador en FOV sin necesitar silent aim
             local bestD3=math.huge
-            for _,p in ipairs(Players:GetPlayers()) do
+            for _,p in ipairs(_plrList) do
                 if shouldSkip(p) then continue end
                 local char=p.Character; if not char then continue end
                 local hum=char:FindFirstChildOfClass("Humanoid")
                 local root=char:FindFirstChild("HumanoidRootPart")
-                -- Kill check: solo si el objetivo sigue vivo
                 if not hum or hum.Health<=0 or not root then continue end
                 local sp2,onS=camera:WorldToViewportPoint(root.Position)
                 if not onS then continue end
@@ -1763,15 +1783,14 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    local boxCol=_boxCol
-    local skelCol=_skelCol
-    local namCol=_namCol
-    local snapCol=_snapCol
+    local boxCol=_boxCol; local skelCol=_skelCol
+    local namCol=_namCol; local snapCol=_snapCol
 
+    -- Snapline target
     local snapTargetP=nil
     if Config.Snapline and Config.SilentAimEnabled and cachedTargetPos then
         local bestD2=math.huge
-        for _,p in ipairs(Players:GetPlayers()) do
+        for _,p in ipairs(_plrList) do
             if p==player then continue end
             local char=p.Character; if not char then continue end
             local root=char:FindFirstChild("HumanoidRootPart"); if not root then continue end
@@ -1784,12 +1803,14 @@ RunService.RenderStepped:Connect(function()
     end
 
     -- ESP
+    local skelN=#SKEL
     for p,obj in pairs(espObjects) do
         local char=p.Character
+        local sk=obj.skeleton
         local function allOff()
             obj.box.Visible=false; obj.nameTag.Visible=false; obj.distTag.Visible=false
             obj.healthBar.Visible=false; obj.healthBg.Visible=false
-            local sk=obj.skeleton; for i=1,#sk do sk[i].Visible=false end
+            for i=1,skelN do sk[i].Visible=false end
             local itd=itemDrawings[p]; if itd then itd.Visible=false end
         end
         if not Config.EspEnabled or not char then allOff(); continue end
@@ -1798,7 +1819,7 @@ RunService.RenderStepped:Connect(function()
         if not root or not hum then allOff(); continue end
         local screenPos,onScreen=camera:WorldToViewportPoint(root.Position)
         if not onScreen then allOff(); continue end
-        local dist3D=myRoot and math.floor((root.Position-myRoot.Position).Magnitude) or 0
+        local dist3D=myRoot and (root.Position-myRoot.Position).Magnitude or 0
         if dist3D>Config.EspMaxDist then allOff(); continue end
         local sp=Vector2.new(screenPos.X,screenPos.Y)
         local head=char:FindFirstChild("Head"); local foot=char:FindFirstChild("LeftFoot") or root
@@ -1810,35 +1831,42 @@ RunService.RenderStepped:Connect(function()
         else topSP=sp-Vector2.new(0,50); botSP=sp+Vector2.new(0,50) end
         local boxH=math.abs(botSP.Y-topSP.Y); local boxW=boxH*0.45
         obj.box.Visible=Config.EspBox; obj.box.Color=boxCol
-        if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW/2,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
+        if Config.EspBox then obj.box.Position=Vector2.new(sp.X-boxW*0.5,topSP.Y); obj.box.Size=Vector2.new(boxW,boxH) end
         obj.nameTag.Visible=Config.EspNames; obj.nameTag.Color=namCol
-        if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW/2,topSP.Y-16) end
-        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=C_DIM
-        if Config.EspDistance then obj.distTag.Text=dist3D.."m"; obj.distTag.Position=Vector2.new(sp.X-boxW/2,botSP.Y+2) end
+        if Config.EspNames then obj.nameTag.Text=p.Name; obj.nameTag.Position=Vector2.new(sp.X-boxW*0.5,topSP.Y-16) end
+        obj.distTag.Visible=Config.EspDistance; obj.distTag.Color=_namCol
+        if Config.EspDistance then obj.distTag.Text=math.floor(dist3D).."m"; obj.distTag.Position=Vector2.new(sp.X-boxW*0.5,botSP.Y+2) end
         local hp=hum.Health/math.max(hum.MaxHealth,1)
         obj.healthBg.Visible=Config.EspHealthBar; obj.healthBar.Visible=Config.EspHealthBar
         if Config.EspHealthBar then
-            local bx=sp.X-boxW/2-7
+            local bx=sp.X-boxW*0.5-7
             obj.healthBg.Position=Vector2.new(bx,topSP.Y); obj.healthBg.Size=Vector2.new(4,boxH); obj.healthBg.Color=Color3.fromRGB(20,20,20)
             local barH=boxH*hp
+            -- Colores precalculados: evita 3 multiplicaciones de Color3 cada frame
+            local r=hp<0.5 and 255 or math.floor(255*(1-hp)*2)
+            local g=hp>0.5 and 255 or math.floor(255*hp*2)
             obj.healthBar.Position=Vector2.new(bx,topSP.Y+boxH-barH); obj.healthBar.Size=Vector2.new(4,barH)
-            obj.healthBar.Color=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(255*hp),0)
+            obj.healthBar.Color=Color3.fromRGB(r,g,0)
         end
-        for si,pair in ipairs(SKEL) do
-            local pA=char:FindFirstChild(pair[1]); local pB=char:FindFirstChild(pair[2])
-            local line=obj.skeleton[si]; line.Color=skelCol
-            if Config.EspSkeleton and pA and pB then
-                local sA,onA=camera:WorldToViewportPoint(pA.Position)
-                local sB,onB=camera:WorldToViewportPoint(pB.Position)
-                line.Visible=onA and onB
-                if onA and onB then line.From=Vector2.new(sA.X,sA.Y); line.To=Vector2.new(sB.X,sB.Y) end
-            else line.Visible=false end
+        if Config.EspSkeleton then
+            for si=1,skelN do
+                local pair=SKEL[si]
+                local pA=char:FindFirstChild(pair[1]); local pB=char:FindFirstChild(pair[2])
+                local line=sk[si]; line.Color=skelCol
+                if pA and pB then
+                    local sA,onA=camera:WorldToViewportPoint(pA.Position)
+                    local sB,onB=camera:WorldToViewportPoint(pB.Position)
+                    line.Visible=onA and onB
+                    if onA and onB then line.From=Vector2.new(sA.X,sA.Y); line.To=Vector2.new(sB.X,sB.Y) end
+                else line.Visible=false end
+            end
+        else
+            for i=1,skelN do sk[i].Visible=false end
         end
         local itDraw=itemDrawings[p]
         if itDraw then
             local iname=Config.ItemInHand and getItemInHand(char) or nil
-            if iname then
-                itDraw.Text="["..iname.."]"; itDraw.Position=Vector2.new(sp.X,topSP.Y-26); itDraw.Visible=true
+            if iname then itDraw.Text="["..iname.."]"; itDraw.Position=Vector2.new(sp.X,topSP.Y-26); itDraw.Visible=true
             else itDraw.Visible=false end
         end
         if snapTargetP==p then
@@ -1849,6 +1877,17 @@ RunService.RenderStepped:Connect(function()
 end)
 
 print("[SYY toop] Loaded — "..player.Name)
+
+-- Reducir calidad de render en móvil para mejorar FPS
+if isMobile then
+    pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+    pcall(function() settings().Rendering.EnableFRM = false end)
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        lighting.GlobalShadows = false
+        lighting.Technology = Enum.Technology.Compatibility
+    end)
+end
 
 task.defer(function()
     if Config.StreamMode then
