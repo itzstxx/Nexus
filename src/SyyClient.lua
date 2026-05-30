@@ -695,8 +695,7 @@ makeToggle(pageAim,"NPC Silent Aim",   "NpcSilentAimEnabled")
 makeDropdown(pageAim,"NPC Part",       "NpcTargetPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
 secLabel(pageAim,"General")
 makeToggle(pageAim,"Team Check",       "TeamCheckEnabled")
-secLabel(pageAim,"Universal Silent Aim")
-makeToggle(pageAim,"Universal SA",     "UniversalSAEnabled")
+-- Universal SA ahora está integrado en Silent Aim automáticamente
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS
@@ -1804,9 +1803,7 @@ pcall(function()
         local method=getnamecallmethod()
 
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
-        -- En stream mode se salta (no queremos intervenir remotes), pero
-        -- el raycast silent aim sigue activo siempre.
-        if Config.UniversalSAEnabled and not checkcaller() and not streamModeOn
+        if not checkcaller() and not streamModeOn
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
             if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
@@ -1816,15 +1813,25 @@ pcall(function()
                 local myC=player.Character
                 local myR=myC and myC:FindFirstChild("HumanoidRootPart")
                 local replaced=false
-                for i=2,math.min(#args,8) do
+                for i=2,math.min(#args,12) do
                     if typeof(args[i])=="Vector3" then
                         local v=args[i]
-                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
-                        if v.Magnitude>2 then
+                        -- Reemplazar cualquier Vector3 que parezca posición mundo (no dirección)
+                        if v.Magnitude>1 then
                             if myR then
                                 local d=(v-myR.Position).Magnitude
-                                if d>5 and d<2000 then args[i]=usePos2; replaced=true end
+                                -- Rango amplio: cualquier pos a más de 3 studs del jugador
+                                if d>3 then args[i]=usePos2; replaced=true end
+                            else
+                                args[i]=usePos2; replaced=true
                             end
+                        end
+                    elseif typeof(args[i])=="CFrame" then
+                        -- Algunos juegos mandan CFrame en vez de Vector3
+                        local v=args[i].Position
+                        if myR then
+                            local d=(v-myR.Position).Magnitude
+                            if d>3 then args[i]=CFrame.new(usePos2); replaced=true end
                         end
                     end
                 end
@@ -1868,7 +1875,10 @@ end)
 local camLockTarget=nil   -- root del objetivo actualmente bloqueado
 
 RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
-    if not Config.CamLockEnabled then camLockTarget=nil; return end
+    if not Config.CamLockEnabled then
+        camLockTarget=nil
+        return
+    end
 
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -1894,15 +1904,25 @@ RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, fu
     camLockTarget=bestRoot
     if not bestRoot then return end
 
+    -- Forzar CameraType a Scriptable para que nuestro CFrame no sea sobreescrito
+    local prevType=camera.CameraType
+    camera.CameraType=Enum.CameraType.Scriptable
+
     local camPos=camera.CFrame.Position
     local targetPos=Vector3.new(bestRoot.Position.X,bestRoot.Position.Y+1.5,bestRoot.Position.Z)
     local rawDir=targetPos-camPos
-    if rawDir.Magnitude<0.1 then return end
-    local strength=math.clamp(Config.CamLockStrength,1,20)*0.012
+    if rawDir.Magnitude<0.1 then
+        camera.CameraType=prevType
+        return
+    end
+    local strength=math.clamp(Config.CamLockStrength,1,20)*0.055  -- más fuerte en PC
     local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit,strength)
     if newLook.Magnitude>0.01 then
         camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
     end
+
+    -- Restaurar tipo de cámara para que el jugador pueda seguir moviendo la vista
+    camera.CameraType=Enum.CameraType.Custom
 end)
 
 -- ── RENDER STEP ÚNICO
