@@ -1808,7 +1808,9 @@ pcall(function()
             local usePos2=nil
             if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
             if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
-            if usePos2 and math.random(100)<=Config.HitChance then
+            -- PC: intercepta siempre. Móvil: solo cuando está disparando
+            local shouldFire = not isMobile or isFiring
+            if usePos2 and shouldFire and math.random(100)<=Config.HitChance then
                 local args={...}
                 local myC=player.Character
                 local myR=myC and myC:FindFirstChild("HumanoidRootPart")
@@ -1957,15 +1959,14 @@ Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
 RunService.RenderStepped:Connect(function()
     frame=frame+1
 
-    -- Cache por frame — evita llamadas repetidas a la misma API
+    -- Cache por frame
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
     local vpSize=camera.ViewportSize
     local center2D=Vector2.new(vpSize.X*0.5, vpSize.Y*0.5)
 
-    -- ══ TARGET CACHE — corre SIEMPRE, incluso con stream mode ON ══
+    -- ══ TARGET CACHE — corre SIEMPRE ══
     if frame%2==0 then
-        -- wallbreakParams solo necesita actualizarse si Manipulation está ON
         if Config.Manipulation then
             local chars={}
             for _,p in ipairs(_plrList) do
@@ -1975,12 +1976,9 @@ RunService.RenderStepped:Connect(function()
         end
 
         if Config.SilentAimEnabled then
-            local center=center2D
-            local bestD=math.huge; local bestPos=nil
-            local myChar2=myChar
-            local myRoot2=myRoot
-            local camLook=camera.CFrame.LookVector
-            local fovLimit = streamModeOn and math.huge or Config.FovRadius
+            local bestScore=math.huge
+            local bestPos=nil
+            local fovLimit=streamModeOn and math.huge or Config.FovRadius
 
             for _,p in ipairs(_plrList) do
                 if shouldSkip(p) then continue end
@@ -1990,32 +1988,58 @@ RunService.RenderStepped:Connect(function()
                 if not hum or hum.Health<=0 or not root then continue end
 
                 local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
 
-                if Config.VisibleCheck then
+                if isMobile then
+                    -- ── MÓVIL: target por FOV 2D (distancia al centro de pantalla)
                     if not onS then continue end
                     if d2>fovLimit then continue end
-                    if not Config.Manipulation then
+                    if Config.VisibleCheck and not Config.Manipulation then
                         local lc=player.Character
                         if lc then
                             local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
                             if ok and #obs>0 then continue end
                         end
                     end
+                    if d2<bestScore then
+                        bestScore=d2
+                        local pn=Config.TargetPart
+                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                        elseif pn=="Pierna" then pn="LowerTorso"
+                        elseif pn=="Pecho" then pn="UpperTorso"
+                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                        local hp=char:FindFirstChild(pn) or root
+                        bestPos=hp.Position
+                    end
                 else
-                    -- Sin VisibleCheck: sólo filtrar por FOV si está activado
-                    if d2>fovLimit then continue end
-                end
+                    -- ── PC: target por distancia 3D desde el jugador
+                    -- No depende del tamaño de ventana ni del foco
+                    if not myRoot then continue end
+                    local dist3D=(root.Position-myRoot.Position).Magnitude
 
-                if d2<bestD then
-                    bestD=d2
-                    local pn=Config.TargetPart
-                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                    elseif pn=="Pierna" then pn="LowerTorso"
-                    elseif pn=="Pecho" then pn="UpperTorso"
-                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                    local hp2=char:FindFirstChild(pn) or root
-                    bestPos=hp2.Position
+                    -- Filtro de FOV opcional: si FovRadius<800 lo aplicamos
+                    if not streamModeOn and Config.FovRadius<800 then
+                        if d2>fovLimit then continue end
+                    end
+
+                    if Config.VisibleCheck and not Config.Manipulation then
+                        local lc=player.Character
+                        if lc then
+                            local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
+                            if ok and #obs>0 then continue end
+                        end
+                    end
+
+                    if dist3D<bestScore then
+                        bestScore=dist3D
+                        local pn=Config.TargetPart
+                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                        elseif pn=="Pierna" then pn="LowerTorso"
+                        elseif pn=="Pecho" then pn="UpperTorso"
+                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                        local hp=char:FindFirstChild(pn) or root
+                        bestPos=hp.Position
+                    end
                 end
             end
             cachedTargetPos=bestPos
