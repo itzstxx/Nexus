@@ -1866,6 +1866,36 @@ pcall(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- MOUSE.HIT HOOK — juegos con Shift Lock usan Mouse.Hit.Position
+-- en vez de Workspace:Raycast. Interceptamos __index del Mouse.
+-- ══════════════════════════════════════════════════════════════
+pcall(function()
+    local mouse=player:GetMouse()
+    local oldIndex
+    oldIndex=hookmetamethod(game,"__index",newcclosure(function(self,key)
+        if self==mouse and (key=="Hit" or key=="Target") then
+            if not checkcaller() and not streamModeOn then
+                local usePos=nil
+                if Config.SilentAimEnabled and cachedTargetPos then usePos=cachedTargetPos end
+                if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos then usePos=cachedNpcPos end
+                if usePos and math.random(100)<=Config.HitChance then
+                    local shouldFire = not isMobile or isFiring
+                    if shouldFire then
+                        if key=="Hit" then
+                            return CFrame.new(usePos)
+                        else
+                            -- Target: devolver el HumanoidRootPart del objetivo
+                            return nil  -- nil es seguro, el juego lo ignora
+                        end
+                    end
+                end
+            end
+        end
+        return oldIndex(self,key)
+    end))
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- PLAYER LIST — debe estar antes de CamLock y RenderStepped
 -- ══════════════════════════════════════════════════════════════
 local _plrList={}
@@ -1895,6 +1925,12 @@ RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, fu
         return
     end
 
+    -- Kill check: si el target actual murió, liberarlo
+    if camLockTarget then
+        local hum=camLockTarget.Parent and camLockTarget.Parent:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health<=0 then camLockTarget=nil end
+    end
+
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
     local bestRoot=nil; local bestDist=math.huge
@@ -1919,24 +1955,16 @@ RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, fu
     camLockTarget=bestRoot
     if not bestRoot then return end
 
-    -- Forzar CameraType a Scriptable para que nuestro CFrame no sea sobreescrito
-    local prevType=camera.CameraType
     camera.CameraType=Enum.CameraType.Scriptable
-
     local camPos=camera.CFrame.Position
     local targetPos=Vector3.new(bestRoot.Position.X,bestRoot.Position.Y+1.5,bestRoot.Position.Z)
     local rawDir=targetPos-camPos
-    if rawDir.Magnitude<0.1 then
-        camera.CameraType=prevType
-        return
-    end
-    local strength=math.clamp(Config.CamLockStrength,1,20)*0.055  -- más fuerte en PC
+    if rawDir.Magnitude<0.1 then camera.CameraType=Enum.CameraType.Custom; return end
+    local strength=math.clamp(Config.CamLockStrength,1,20)*(isMobile and 0.012 or 0.055)
     local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit,strength)
     if newLook.Magnitude>0.01 then
         camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
     end
-
-    -- Restaurar tipo de cámara para que el jugador pueda seguir moviendo la vista
     camera.CameraType=Enum.CameraType.Custom
 end)
 
