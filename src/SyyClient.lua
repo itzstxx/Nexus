@@ -152,12 +152,12 @@ local function stroke(p,col,thick)
     local s=Instance.new("UIStroke"); s.Color=col or Color3.fromRGB(0,190,255)
     s.Thickness=thick or 1; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s
 end
-local C_BG    = Color3.fromRGB(10,10,12)
-local C_ROW   = Color3.fromRGB(16,16,20)
-local C_DARK  = Color3.fromRGB(8,8,10)
-local C_ACCENT= Color3.fromRGB(255,50,80)
-local C_TEXT  = Color3.fromRGB(220,210,210)
-local C_DIM   = Color3.fromRGB(160,80,90)
+local C_BG    = Color3.fromRGB(6,10,18)
+local C_ROW   = Color3.fromRGB(8,14,24)
+local C_DARK  = Color3.fromRGB(3,7,14)
+local C_ACCENT= Color3.fromRGB(0,190,255)
+local C_TEXT  = Color3.fromRGB(180,240,255)
+local C_DIM   = Color3.fromRGB(70,160,210)
 local TWEENI  = TweenInfo.new(0.18,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
 local TWEENSL = TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
 
@@ -172,7 +172,6 @@ local panelH = isMobile and math.min(math.floor(vp.Y * 0.72), 500) or 520
 local main=Instance.new("Frame")
 main.Name="SyyPanel"
 main.Size=UDim2.fromOffset(panelW,panelH)
--- Móvil: centrado arriba | PC: centrado en pantalla
 if isMobile then
     main.Position=UDim2.new(0.5,-panelW/2,0,math.floor(vp.Y*0.08))
 else
@@ -184,9 +183,9 @@ local mainStroke=stroke(main,C_ACCENT,2)
 
 local grad=Instance.new("UIGradient")
 grad.Color=ColorSequence.new({
-    ColorSequenceKeypoint.new(0,Color3.fromRGB(18,4,8)),
-    ColorSequenceKeypoint.new(0.5,Color3.fromRGB(10,10,12)),
-    ColorSequenceKeypoint.new(1,Color3.fromRGB(22,4,10)),
+    ColorSequenceKeypoint.new(0,Color3.fromRGB(0,18,36)),
+    ColorSequenceKeypoint.new(0.5,Color3.fromRGB(4,10,20)),
+    ColorSequenceKeypoint.new(1,Color3.fromRGB(0,24,44)),
 })
 grad.Rotation=40; grad.Parent=main
 
@@ -235,7 +234,7 @@ end)
 local titleLbl=Instance.new("TextLabel")
 titleLbl.Size=UDim2.new(1,-110,0,isMobile and 26 or 24)
 titleLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 6 or 4)
-titleLbl.BackgroundTransparency=1; titleLbl.Text="⬡ SYY V1"
+titleLbl.BackgroundTransparency=1; titleLbl.Text="SYY V1"
 titleLbl.TextColor3=C_ACCENT; titleLbl.Font=Enum.Font.GothamBlack
 titleLbl.TextSize=isMobile and 20 or 18
 titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
@@ -243,7 +242,7 @@ titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
 local subLbl=Instance.new("TextLabel")
 subLbl.Size=UDim2.new(1,-110,0,13)
 subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 22 or 27)
-subLbl.BackgroundTransparency=1; subLbl.Text="by EnanoTop1 (stx)  ·  "..player.Name
+subLbl.BackgroundTransparency=1; subLbl.Text="V1  ·  EnanoTop1 (stx)  ·  "..player.Name
 subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
@@ -253,7 +252,7 @@ local igBtn=Instance.new("TextButton")
 igBtn.Size=UDim2.new(0,isMobile and 110 or 90,0,isMobile and 14 or 11)
 igBtn.Position=UDim2.fromOffset(logoSize+10, isMobile and 37 or 31)
 igBtn.BackgroundTransparency=1; igBtn.BorderSizePixel=0
-igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(255,80,160)
+igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255)
 igBtn.Font=Enum.Font.GothamBold; igBtn.TextSize=isMobile and 10 or 9
 igBtn.TextXAlignment=Enum.TextXAlignment.Left
 igBtn.AutoButtonColor=false; igBtn.Parent=header
@@ -262,21 +261,21 @@ igBtn.MouseButton1Click:Connect(function()
     if igCopied then return end; igCopied=true
     pcall(function() setclipboard("@itzstxx") end)
     igBtn.Text="✅ Copiado!"; igBtn.TextColor3=Color3.fromRGB(80,255,140)
-    task.delay(1.8,function() igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(255,80,160); igCopied=false end)
+    task.delay(1.8,function() igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255); igCopied=false end)
 end)
-igBtn.MouseEnter:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,140,200) end end)
-igBtn.MouseLeave:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,80,160) end end)
+igBtn.MouseEnter:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,180,255) end end)
+igBtn.MouseLeave:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(200,140,255) end end)
 
 -- botón X — más grande en móvil
 local closeBtnSz = isMobile and 42 or 34
 local closeBtn=Instance.new("TextButton")
 closeBtn.Size=UDim2.fromOffset(closeBtnSz,closeBtnSz)
 closeBtn.Position=UDim2.new(1,-(closeBtnSz+4),0.5,-(closeBtnSz/2))
-closeBtn.BackgroundColor3=Color3.fromRGB(25,8,10); closeBtn.BorderSizePixel=0
+closeBtn.BackgroundColor3=Color3.fromRGB(35,8,8); closeBtn.BorderSizePixel=0
 closeBtn.Text="✕"; closeBtn.TextColor3=Color3.fromRGB(255,80,80)
 closeBtn.Font=Enum.Font.GothamBold; closeBtn.TextSize=isMobile and 16 or 13
 closeBtn.AutoButtonColor=false; closeBtn.Parent=header
-stroke(closeBtn,Color3.fromRGB(200,30,50),1)
+stroke(closeBtn,Color3.fromRGB(120,30,30),1)
 closeBtn.MouseButton1Click:Connect(function()
     TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
     task.delay(0.15,function() main.Visible=false; main.BackgroundTransparency=0 end)
@@ -294,12 +293,12 @@ tabBarLine.BackgroundColor3=C_ACCENT; tabBarLine.BorderSizePixel=0; tabBarLine.P
 
 -- indicador deslizante de tab activo
 local tabIndicator=Instance.new("Frame")
-tabIndicator.Size=UDim2.new(1/5,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
+tabIndicator.Size=UDim2.new(1/4,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
 tabIndicator.BackgroundColor3=C_ACCENT; tabIndicator.BorderSizePixel=0; tabIndicator.ZIndex=3; tabIndicator.Parent=tabBar
 
 local contentY=headerH+tabBarH+2
 local contentH=panelH-contentY-6
-local tabNames={"Aim","Vis","Ext","Cfg"}
+local tabNames={"Aimbot","Visuals","Extras","Settings"}
 local tabBtns={}; local tabPages={}
 
 local function makeTabPage()
@@ -382,7 +381,7 @@ local function makeToggle(page,text,key,cb)
     local row=Instance.new("Frame")
     row.Size=UDim2.new(1,0,0,ROW_H); row.BackgroundColor3=C_ROW
     row.BorderSizePixel=0; row.Parent=page
-    stroke(row,Color3.fromRGB(60,15,22),1)
+    stroke(row,Color3.fromRGB(0,60,90),1)
 
     local lbl=Instance.new("TextLabel")
     lbl.Size=UDim2.new(1,-(TOG_W+16),1,0); lbl.Position=UDim2.fromOffset(8,0)
@@ -395,18 +394,18 @@ local function makeToggle(page,text,key,cb)
     tog.Size=UDim2.fromOffset(TOG_W,TOG_H)
     tog.Position=UDim2.new(1,-(TOG_W+6),0.5,-(TOG_H/2))
     tog.BackgroundColor3=Color3.fromRGB(20,30,40); tog.BorderSizePixel=0; tog.Parent=row
-    stroke(tog,Color3.fromRGB(80,20,30),1)
+    stroke(tog,Color3.fromRGB(0,80,120),1)
 
     local dot=Instance.new("Frame")
     dot.Size=UDim2.fromOffset(DOT_SZ,DOT_SZ); dot.BorderSizePixel=0
-    dot.BackgroundColor3=Color3.fromRGB(80,40,50); dot.Parent=tog
+    dot.BackgroundColor3=Color3.fromRGB(60,80,100); dot.Parent=tog
 
     local function refresh()
         local on=Config[key]
-        TweenService:Create(tog,TWEENI,{BackgroundColor3=on and Color3.fromRGB(60,8,14) or Color3.fromRGB(22,18,18)}):Play()
+        TweenService:Create(tog,TWEENI,{BackgroundColor3=on and Color3.fromRGB(0,40,70) or Color3.fromRGB(20,30,40)}):Play()
         TweenService:Create(dot,TWEENI,{
             Position=on and UDim2.fromOffset(TOG_W-DOT_SZ-2,2) or UDim2.fromOffset(2,2),
-            BackgroundColor3=on and C_ACCENT or Color3.fromRGB(80,40,50),
+            BackgroundColor3=on and C_ACCENT or Color3.fromRGB(60,80,100),
         }):Play()
     end
     refresh()
@@ -438,8 +437,8 @@ local function makeSlider(page,text,key,mn,mx,cb)
     local trackH = isMobile and 7 or 5
     local track=Instance.new("Frame")
     track.Size=UDim2.new(1,-16,0,trackH); track.Position=UDim2.fromOffset(8,trackY)
-    track.BackgroundColor3=Color3.fromRGB(20,12,14); track.BorderSizePixel=0; track.Parent=row
-    stroke(track,Color3.fromRGB(50,12,18),1)
+    track.BackgroundColor3=Color3.fromRGB(12,22,34); track.BorderSizePixel=0; track.Parent=row
+    stroke(track,Color3.fromRGB(0,60,90),1)
 
     local fill=Instance.new("Frame")
     fill.BackgroundColor3=C_ACCENT; fill.BorderSizePixel=0; fill.Parent=track
@@ -522,7 +521,7 @@ local function makeColorRow(page,text,rk,gk,bk)
         local sr=Instance.new("Frame")
         sr.Size=UDim2.new(1,0,0,ROW_H); sr.BackgroundColor3=C_ROW
         sr.BorderSizePixel=0; sr.Parent=container
-        stroke(sr,Color3.fromRGB(50,12,18),1)
+        stroke(sr,Color3.fromRGB(0,50,80),1)
 
         local sl=Instance.new("TextLabel")
         sl.Size=UDim2.new(0,56,1,0); sl.Position=UDim2.fromOffset(8,0)
@@ -533,7 +532,7 @@ local function makeColorRow(page,text,rk,gk,bk)
         local track=Instance.new("Frame")
         track.Size=UDim2.new(1,-76,0,trackH2)
         track.Position=UDim2.new(0,66,0.5,-(trackH2/2))
-        track.BackgroundColor3=Color3.fromRGB(28,14,18); track.BorderSizePixel=0; track.Parent=sr
+        track.BackgroundColor3=Color3.fromRGB(20,35,50); track.BorderSizePixel=0; track.Parent=sr
         local fill=Instance.new("Frame")
         fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
         fill.BorderSizePixel=0; fill.Parent=track
@@ -695,7 +694,8 @@ makeToggle(pageAim,"NPC Silent Aim",   "NpcSilentAimEnabled")
 makeDropdown(pageAim,"NPC Part",       "NpcTargetPart",{"Head","UpperTorso","LowerTorso","HumanoidRootPart"})
 secLabel(pageAim,"General")
 makeToggle(pageAim,"Team Check",       "TeamCheckEnabled")
--- Universal SA ahora está integrado en Silent Aim automáticamente
+secLabel(pageAim,"Universal Silent Aim")
+makeToggle(pageAim,"Universal SA",     "UniversalSAEnabled")
 
 -- ══════════════════════════════════════════════════════════════
 -- TAB 2: VISUALS
@@ -1261,32 +1261,7 @@ end
 -- ══════════════════════════════════════════════════════════════
 local pageSet=tabPages[4]
 
-secLabel(pageSet,"⌨️ Teclas PC")
-do
-    local shortcuts = {
-        {"Insert / RShift", "Mostrar/Ocultar GUI"},
-        {"Delete / RCtrl",  "Toggle Silent Aim"},
-        {"End / RAlt",      "Toggle Stream Mode"},
-        {"Home",            "Toggle Cam Lock"},
-    }
-    for _,pair in ipairs(shortcuts) do
-        local r=Instance.new("Frame")
-        r.Size=UDim2.new(1,0,0,ROW_H); r.BackgroundColor3=C_ROW
-        r.BorderSizePixel=0; r.Parent=pageSet
-        stroke(r,Color3.fromRGB(0,50,80),1)
-        local kLbl=Instance.new("TextLabel")
-        kLbl.Size=UDim2.new(0.42,0,1,0); kLbl.Position=UDim2.fromOffset(8,0)
-        kLbl.BackgroundTransparency=1; kLbl.Text=pair[1]
-        kLbl.TextColor3=C_ACCENT; kLbl.Font=Enum.Font.GothamBold
-        kLbl.TextSize=TXT_SIZE; kLbl.TextXAlignment=Enum.TextXAlignment.Left; kLbl.Parent=r
-        local dLbl=Instance.new("TextLabel")
-        dLbl.Size=UDim2.new(0.56,0,1,0); dLbl.Position=UDim2.new(0.44,0,0,0)
-        dLbl.BackgroundTransparency=1; dLbl.Text=pair[2]
-        dLbl.TextColor3=C_TEXT; dLbl.Font=Enum.Font.GothamMedium
-        dLbl.TextSize=TXT_SIZE; dLbl.TextXAlignment=Enum.TextXAlignment.Left; dLbl.Parent=r
-    end
-end
-
+-- ── STREAM MODE ─────────────────────────────────────────────
 secLabel(pageSet,"🎥 Stream / Discord")
 makeToggle(pageSet,"📵 Stream Mode","StreamMode",function(on)
     applyStreamMode(on)
@@ -1472,8 +1447,8 @@ do
         or inp.UserInputType==Enum.UserInputType.Touch) then
             local d=inp.Position-dragStart
             local sc=gui.AbsoluteSize
-            local nx=math.clamp(startPos.X.Offset+d.X, 0, sc.X-panelW)
-            local ny=math.clamp(startPos.Y.Offset+d.Y, 0, sc.Y-panelH)
+            local nx=math.clamp(startPos.X.Offset+d.X,0,sc.X-panelW)
+            local ny=math.clamp(startPos.Y.Offset+d.Y,0,sc.Y-panelH)
             main.Position=UDim2.new(startPos.X.Scale,nx,startPos.Y.Scale,ny)
         end
     end)
@@ -1485,7 +1460,6 @@ end
 local fabSz = isMobile and 62 or 46
 local fab=Instance.new("ImageButton")
 fab.Name="SyyFAB"; fab.Size=UDim2.fromOffset(fabSz,fabSz)
--- Móvil: esquina inferior derecha | PC: lado derecho centrado
 fab.Position= isMobile
     and UDim2.new(1,-(fabSz+14),1,-(fabSz+40))
     or  UDim2.new(1,-(fabSz+8),0.5,-(fabSz/2))
@@ -1597,7 +1571,6 @@ UserInputService.InputBegan:Connect(function(inp,proc)
 
     local k=inp.KeyCode
 
-    -- ── Toggle GUI: RightShift (móvil/PC) o Insert (PC) ──────
     if k==Enum.KeyCode.RightShift or k==Enum.KeyCode.Insert then
         if streamModeOn then return end
         if main.Visible then
@@ -1607,17 +1580,11 @@ UserInputService.InputBegan:Connect(function(inp,proc)
             main.Visible=true; main.Size=UDim2.fromOffset(panelW,0)
             TweenService:Create(main,TWEENI,{Size=UDim2.fromOffset(panelW,panelH)}):Play()
         end
-
-    -- ── Silent Aim: RightControl (móvil/PC) o Delete (PC) ────
     elseif k==Enum.KeyCode.RightControl or k==Enum.KeyCode.Delete then
         Config.SilentAimEnabled=not Config.SilentAimEnabled; saveConfig()
         refreshAllToggles()
-
-    -- ── Stream Mode: RightAlt (móvil/PC) o End (PC) ──────────
     elseif k==Enum.KeyCode.RightAlt or k==Enum.KeyCode.End then
         applyStreamMode(not streamModeOn)
-
-    -- ── CamLock: Home (PC) ───────────────────────────────────
     elseif k==Enum.KeyCode.Home then
         Config.CamLockEnabled=not Config.CamLockEnabled; saveConfig()
         refreshAllToggles()
@@ -1803,37 +1770,27 @@ pcall(function()
         local method=getnamecallmethod()
 
         -- ── UNIVERSAL SILENT AIM: FireServer / InvokeServer ──────────
-        if not checkcaller() and not streamModeOn
+        -- En stream mode se salta (no queremos intervenir remotes), pero
+        -- el raycast silent aim sigue activo siempre.
+        if Config.UniversalSAEnabled and not checkcaller() and not streamModeOn
            and (method=="FireServer" or method=="InvokeServer") then
             local usePos2=nil
             if Config.SilentAimEnabled and cachedTargetPos then usePos2=cachedTargetPos end
             if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos2 then usePos2=cachedNpcPos end
-            -- PC: intercepta siempre. Móvil: solo cuando está disparando
-            local shouldFire = not isMobile or isFiring
-            if usePos2 and shouldFire and math.random(100)<=Config.HitChance then
+            if usePos2 and math.random(100)<=Config.HitChance then
                 local args={...}
                 local myC=player.Character
                 local myR=myC and myC:FindFirstChild("HumanoidRootPart")
                 local replaced=false
-                for i=2,math.min(#args,12) do
+                for i=2,math.min(#args,8) do
                     if typeof(args[i])=="Vector3" then
                         local v=args[i]
-                        -- Reemplazar cualquier Vector3 que parezca posición mundo (no dirección)
-                        if v.Magnitude>1 then
+                        -- Saltar vectores dirección (magnitud ~1) y vectores nulos
+                        if v.Magnitude>2 then
                             if myR then
                                 local d=(v-myR.Position).Magnitude
-                                -- Rango amplio: cualquier pos a más de 3 studs del jugador
-                                if d>3 then args[i]=usePos2; replaced=true end
-                            else
-                                args[i]=usePos2; replaced=true
+                                if d>5 and d<2000 then args[i]=usePos2; replaced=true end
                             end
-                        end
-                    elseif typeof(args[i])=="CFrame" then
-                        -- Algunos juegos mandan CFrame en vez de Vector3
-                        local v=args[i].Position
-                        if myR then
-                            local d=(v-myR.Position).Magnitude
-                            if d>3 then args[i]=CFrame.new(usePos2); replaced=true end
                         end
                     end
                 end
@@ -1866,49 +1823,6 @@ pcall(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
--- MOUSE.HIT HOOK — juegos con Shift Lock usan Mouse.Hit.Position
--- en vez de Workspace:Raycast. Interceptamos __index del Mouse.
--- ══════════════════════════════════════════════════════════════
-pcall(function()
-    local mouse=player:GetMouse()
-    local oldIndex
-    oldIndex=hookmetamethod(game,"__index",newcclosure(function(self,key)
-        if self==mouse and (key=="Hit" or key=="Target") then
-            if not checkcaller() and not streamModeOn then
-                local usePos=nil
-                if Config.SilentAimEnabled and cachedTargetPos then usePos=cachedTargetPos end
-                if Config.NpcSilentAimEnabled and cachedNpcPos and not usePos then usePos=cachedNpcPos end
-                if usePos and math.random(100)<=Config.HitChance then
-                    local shouldFire = not isMobile or isFiring
-                    if shouldFire then
-                        if key=="Hit" then
-                            return CFrame.new(usePos)
-                        else
-                            -- Target: devolver el HumanoidRootPart del objetivo
-                            return nil  -- nil es seguro, el juego lo ignora
-                        end
-                    end
-                end
-            end
-        end
-        return oldIndex(self,key)
-    end))
-end)
-
--- ══════════════════════════════════════════════════════════════
--- PLAYER LIST — debe estar antes de CamLock y RenderStepped
--- ══════════════════════════════════════════════════════════════
-local _plrList={}
-local function _rebuildPlrList()
-    _plrList=Players:GetPlayers()
-end
-_rebuildPlrList()
-Players.PlayerAdded:Connect(_rebuildPlrList)
-Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
-
-local frame=0
-
--- ══════════════════════════════════════════════════════════════
 -- CAM LOCK — BindToRenderStep prioridad Camera+1
 --   Corre DESPUÉS del script de cámara nativo de Roblox (prio 200)
 --   así no lo sobreescriben. Funciona en tercera persona móvil.
@@ -1920,16 +1834,7 @@ local frame=0
 local camLockTarget=nil   -- root del objetivo actualmente bloqueado
 
 RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
-    if not Config.CamLockEnabled then
-        camLockTarget=nil
-        return
-    end
-
-    -- Kill check: si el target actual murió, liberarlo
-    if camLockTarget then
-        local hum=camLockTarget.Parent and camLockTarget.Parent:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health<=0 then camLockTarget=nil end
-    end
+    if not Config.CamLockEnabled then camLockTarget=nil; return end
 
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -1955,17 +1860,15 @@ RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, fu
     camLockTarget=bestRoot
     if not bestRoot then return end
 
-    camera.CameraType=Enum.CameraType.Scriptable
     local camPos=camera.CFrame.Position
     local targetPos=Vector3.new(bestRoot.Position.X,bestRoot.Position.Y+1.5,bestRoot.Position.Z)
     local rawDir=targetPos-camPos
-    if rawDir.Magnitude<0.1 then camera.CameraType=Enum.CameraType.Custom; return end
-    local strength=math.clamp(Config.CamLockStrength,1,20)*(isMobile and 0.012 or 0.055)
+    if rawDir.Magnitude<0.1 then return end
+    local strength=math.clamp(Config.CamLockStrength,1,20)*0.012
     local newLook=camera.CFrame.LookVector:Lerp(rawDir.Unit,strength)
     if newLook.Magnitude>0.01 then
         camera.CFrame=CFrame.lookAt(camPos,camPos+newLook.Unit)
     end
-    camera.CameraType=Enum.CameraType.Custom
 end)
 
 -- ── RENDER STEP ÚNICO
@@ -1988,17 +1891,27 @@ local function _refreshColors()
     if Config.SnapColorR~=_lsnR or Config.SnapColorG~=_lsnG or Config.SnapColorB~=_lsnB then _snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB);_lsnR,_lsnG,_lsnB=Config.SnapColorR,Config.SnapColorG,Config.SnapColorB end
     if Config.FovColorR~=_lfR  or Config.FovColorG~=_lfG  or Config.FovColorB~=_lfB  then _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB);_lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB end
 end
+local frame=0
+local _plrList={}  -- lista de jugadores cacheada, se actualiza con events
+local function _rebuildPlrList()
+    _plrList=Players:GetPlayers()
+end
+_rebuildPlrList()
+Players.PlayerAdded:Connect(_rebuildPlrList)
+Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
+
 RunService.RenderStepped:Connect(function()
     frame=frame+1
 
-    -- Cache por frame
+    -- Cache por frame — evita llamadas repetidas a la misma API
     local myChar=player.Character
     local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
     local vpSize=camera.ViewportSize
     local center2D=Vector2.new(vpSize.X*0.5, vpSize.Y*0.5)
 
-    -- ══ TARGET CACHE — corre SIEMPRE ══
+    -- ══ TARGET CACHE — corre SIEMPRE, incluso con stream mode ON ══
     if frame%2==0 then
+        -- wallbreakParams solo necesita actualizarse si Manipulation está ON
         if Config.Manipulation then
             local chars={}
             for _,p in ipairs(_plrList) do
@@ -2008,9 +1921,12 @@ RunService.RenderStepped:Connect(function()
         end
 
         if Config.SilentAimEnabled then
-            local bestScore=math.huge
-            local bestPos=nil
-            local fovLimit=streamModeOn and math.huge or Config.FovRadius
+            local center=center2D
+            local bestD=math.huge; local bestPos=nil
+            local myChar2=myChar
+            local myRoot2=myRoot
+            local camLook=camera.CFrame.LookVector
+            local fovLimit = streamModeOn and math.huge or Config.FovRadius
 
             for _,p in ipairs(_plrList) do
                 if shouldSkip(p) then continue end
@@ -2020,62 +1936,40 @@ RunService.RenderStepped:Connect(function()
                 if not hum or hum.Health<=0 or not root then continue end
 
                 local sp2,onS=camera:WorldToViewportPoint(root.Position)
-                local d2=(Vector2.new(sp2.X,sp2.Y)-center2D).Magnitude
+                local d2=(Vector2.new(sp2.X,sp2.Y)-center).Magnitude
 
-                if isMobile then
-                    -- ── MÓVIL: target por FOV 2D (distancia al centro de pantalla)
+                if Config.VisibleCheck then
                     if not onS then continue end
                     if d2>fovLimit then continue end
-                    if Config.VisibleCheck and not Config.Manipulation then
+                    if not Config.Manipulation then
                         local lc=player.Character
                         if lc then
                             local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
                             if ok and #obs>0 then continue end
                         end
-                    end
-                    if d2<bestScore then
-                        bestScore=d2
-                        local pn=Config.TargetPart
-                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                        elseif pn=="Pierna" then pn="LowerTorso"
-                        elseif pn=="Pecho" then pn="UpperTorso"
-                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                        local hp=char:FindFirstChild(pn) or root
-                        bestPos=hp.Position
                     end
                 else
-                    -- ── PC: target FOV 2D (mouse position) — funciona con juego minimizado
-                    -- Usamos mouse position real en vez de center2D para Xeno/juego minimizado
+                    -- Sin VisibleCheck: solo limitar por FOV si no es stream mode
+                    if not streamModeOn and d2>fovLimit then continue end
                     if not onS then continue end
-                    local mousePos = UserInputService:GetMouseLocation()
-                    local dMouse = (Vector2.new(sp2.X, sp2.Y) - mousePos).Magnitude
-                    local dist3D = myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
-
-                    -- FOV check: distancia del target al cursor del mouse
-                    if not streamModeOn then
-                        if dMouse > Config.FovRadius then continue end
-                    end
-
-                    if Config.VisibleCheck and not Config.Manipulation then
+                    if not Config.Manipulation then
                         local lc=player.Character
                         if lc then
                             local ok,obs=pcall(function() return camera:GetPartsObscuringTarget({root.Position},{lc,char}) end)
                             if ok and #obs>0 then continue end
                         end
                     end
+                end
 
-                    -- Score: combina distancia al mouse y distancia 3D
-                    local score = dMouse + dist3D * 0.01
-                    if score < bestScore then
-                        bestScore = score
-                        local pn=Config.TargetPart
-                        if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
-                        elseif pn=="Pierna" then pn="LowerTorso"
-                        elseif pn=="Pecho" then pn="UpperTorso"
-                        elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
-                        local hp=char:FindFirstChild(pn) or root
-                        bestPos=hp.Position
-                    end
+                if d2<bestD then
+                    bestD=d2
+                    local pn=Config.TargetPart
+                    if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
+                    elseif pn=="Pierna" then pn="LowerTorso"
+                    elseif pn=="Pecho" then pn="UpperTorso"
+                    elseif pn=="Combo" then local r=math.random(100); pn=r<=35 and "LowerTorso" or (r<=85 and "UpperTorso" or "Head") end
+                    local hp2=char:FindFirstChild(pn) or root
+                    bestPos=hp2.Position
                 end
             end
             cachedTargetPos=bestPos
@@ -2290,17 +2184,14 @@ end)
 
 print("[SYY toop] Loaded — "..player.Name)
 
--- Calidad de render al cargar
-pcall(function()
-    if isMobile then
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        settings().Rendering.EnableFRM = false
-        game:GetService("Lighting").GlobalShadows = false
-        game:GetService("Lighting").Technology = Enum.Technology.Compatibility
-    else
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level05
-    end
-end)
+-- Ajustes livianos en móvil sin forzar Render/Graphics Level 1
+if isMobile then
+    pcall(function()
+        local lighting = game:GetService("Lighting")
+        lighting.GlobalShadows = false
+        lighting.Technology = Enum.Technology.Compatibility
+    end)
+end
 
 task.defer(function()
     if Config.StreamMode then
