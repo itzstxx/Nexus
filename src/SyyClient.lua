@@ -166,16 +166,17 @@ local isMobile = UserInputService.TouchEnabled and not UserInputService.Keyboard
 
 -- ── PANEL — adaptativo móvil / PC ───────────────────────────
 local vp = camera.ViewportSize
-local panelW = isMobile and math.min(math.floor(vp.X * 0.82), 380) or 314
-local panelH = isMobile and math.min(math.floor(vp.Y * 0.72), 500) or 480
+local panelW = isMobile and math.min(math.floor(vp.X * 0.82), 380) or 360
+local panelH = isMobile and math.min(math.floor(vp.Y * 0.72), 500) or 520
 
 local main=Instance.new("Frame")
 main.Name="SyyPanel"
 main.Size=UDim2.fromOffset(panelW,panelH)
+-- Móvil: centrado arriba | PC: centrado en pantalla
 if isMobile then
     main.Position=UDim2.new(0.5,-panelW/2,0,math.floor(vp.Y*0.08))
 else
-    main.Position=UDim2.new(0,28,0.5,-panelH/2)
+    main.Position=UDim2.new(0.5,-panelW/2,0.5,-panelH/2)
 end
 main.BackgroundColor3=C_BG; main.BackgroundTransparency=0
 main.BorderSizePixel=0; main.ClipsDescendants=true; main.Parent=gui
@@ -293,12 +294,12 @@ tabBarLine.BackgroundColor3=C_ACCENT; tabBarLine.BorderSizePixel=0; tabBarLine.P
 
 -- indicador deslizante de tab activo
 local tabIndicator=Instance.new("Frame")
-tabIndicator.Size=UDim2.new(1/4,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
+tabIndicator.Size=UDim2.new(1/5,0,0,2); tabIndicator.Position=UDim2.new(0,0,1,-2)
 tabIndicator.BackgroundColor3=C_ACCENT; tabIndicator.BorderSizePixel=0; tabIndicator.ZIndex=3; tabIndicator.Parent=tabBar
 
 local contentY=headerH+tabBarH+2
 local contentH=panelH-contentY-6
-local tabNames={"Aimbot","Visuals","Extras","Settings"}
+local tabNames={"Aim","Vis","Ext","Cfg","SLR"}
 local tabBtns={}; local tabPages={}
 
 local function makeTabPage()
@@ -1261,7 +1262,32 @@ end
 -- ══════════════════════════════════════════════════════════════
 local pageSet=tabPages[4]
 
--- ── STREAM MODE ─────────────────────────────────────────────
+secLabel(pageSet,"⌨️ Teclas PC")
+do
+    local shortcuts = {
+        {"Insert / RShift", "Mostrar/Ocultar GUI"},
+        {"Delete / RCtrl",  "Toggle Silent Aim"},
+        {"End / RAlt",      "Toggle Stream Mode"},
+        {"Home",            "Toggle Cam Lock"},
+    }
+    for _,pair in ipairs(shortcuts) do
+        local r=Instance.new("Frame")
+        r.Size=UDim2.new(1,0,0,ROW_H); r.BackgroundColor3=C_ROW
+        r.BorderSizePixel=0; r.Parent=pageSet
+        stroke(r,Color3.fromRGB(0,50,80),1)
+        local kLbl=Instance.new("TextLabel")
+        kLbl.Size=UDim2.new(0.42,0,1,0); kLbl.Position=UDim2.fromOffset(8,0)
+        kLbl.BackgroundTransparency=1; kLbl.Text=pair[1]
+        kLbl.TextColor3=C_ACCENT; kLbl.Font=Enum.Font.GothamBold
+        kLbl.TextSize=TXT_SIZE; kLbl.TextXAlignment=Enum.TextXAlignment.Left; kLbl.Parent=r
+        local dLbl=Instance.new("TextLabel")
+        dLbl.Size=UDim2.new(0.56,0,1,0); dLbl.Position=UDim2.new(0.44,0,0,0)
+        dLbl.BackgroundTransparency=1; dLbl.Text=pair[2]
+        dLbl.TextColor3=C_TEXT; dLbl.Font=Enum.Font.GothamMedium
+        dLbl.TextSize=TXT_SIZE; dLbl.TextXAlignment=Enum.TextXAlignment.Left; dLbl.Parent=r
+    end
+end
+
 secLabel(pageSet,"🎥 Stream / Discord")
 makeToggle(pageSet,"📵 Stream Mode","StreamMode",function(on)
     applyStreamMode(on)
@@ -1424,6 +1450,158 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
+-- TAB 5: SLR — pcall total, no rompe otros juegos
+-- ══════════════════════════════════════════════════════════════
+local pageSLR=tabPages[5]
+pcall(function()
+    local RS=game:GetService("ReplicatedStorage")
+    local function slrBtn(page,label,bgcol,fn)
+        local b=Instance.new("TextButton")
+        b.Size=UDim2.new(1,0,0,ROW_H); b.BackgroundColor3=bgcol or Color3.fromRGB(0,30,50)
+        b.BorderSizePixel=0; b.Text=label; b.TextColor3=C_TEXT
+        b.Font=Enum.Font.GothamBold; b.TextSize=TXT_SIZE; b.AutoButtonColor=false; b.Parent=page
+        stroke(b,C_ACCENT,1)
+        local orig=label
+        b.MouseButton1Click:Connect(function()
+            local ok,err=pcall(fn)
+            b.Text=ok and "OK" or "Error"
+            b.BackgroundColor3=ok and Color3.fromRGB(0,40,15) or Color3.fromRGB(50,5,5)
+            task.delay(1.4,function() b.Text=orig; b.BackgroundColor3=bgcol or Color3.fromRGB(0,30,50) end)
+            if not ok then warn("[SLR]",tostring(err)) end
+        end)
+        return b
+    end
+    local function slrPicker(page,hint,items)
+        local selected=nil
+        local optH=isMobile and 32 or 24
+        local row=Instance.new("Frame")
+        row.Size=UDim2.new(1,0,0,ROW_H); row.BackgroundColor3=C_ROW
+        row.BorderSizePixel=0; row.ClipsDescendants=false; row.Parent=page
+        stroke(row,Color3.fromRGB(0,60,90),1)
+        local lbl=Instance.new("TextButton")
+        lbl.Size=UDim2.new(1,0,1,0); lbl.BackgroundTransparency=1; lbl.BorderSizePixel=0
+        lbl.Text=hint..": ---"; lbl.TextColor3=C_DIM; lbl.Font=Enum.Font.GothamMedium
+        lbl.TextSize=TXT_SIZE; lbl.TextXAlignment=Enum.TextXAlignment.Left
+        lbl.AutoButtonColor=false; lbl.ZIndex=2; lbl.Parent=row
+        local drop=Instance.new("Frame")
+        drop.Size=UDim2.new(1,0,0,0); drop.Position=UDim2.new(0,0,1,1)
+        drop.BackgroundColor3=C_DARK; drop.BorderSizePixel=0
+        drop.ZIndex=30; drop.ClipsDescendants=true; drop.Visible=false; drop.Parent=row
+        stroke(drop,C_ACCENT,1)
+        local scrollDrop=Instance.new("ScrollingFrame")
+        scrollDrop.Size=UDim2.new(1,0,1,0); scrollDrop.BackgroundTransparency=1
+        scrollDrop.BorderSizePixel=0; scrollDrop.ScrollBarThickness=3
+        scrollDrop.ScrollBarImageColor3=C_ACCENT
+        scrollDrop.CanvasSize=UDim2.new(0,0,0,#items*optH)
+        scrollDrop.ZIndex=31; scrollDrop.Parent=drop
+        for i,item in ipairs(items) do
+            local ob=Instance.new("TextButton")
+            ob.Size=UDim2.new(1,0,0,optH); ob.Position=UDim2.fromOffset(0,(i-1)*optH)
+            ob.BackgroundColor3=i%2==0 and C_ROW or C_DARK; ob.BorderSizePixel=0
+            ob.Text=item; ob.Font=Enum.Font.GothamMedium; ob.TextSize=TXT_SIZE
+            ob.TextColor3=C_TEXT; ob.AutoButtonColor=false; ob.ZIndex=32; ob.Parent=scrollDrop
+            ob.MouseButton1Click:Connect(function()
+                selected=item; lbl.Text=hint..": "..item; lbl.TextColor3=C_ACCENT
+                TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
+                task.delay(0.18,function() drop.Visible=false end)
+            end)
+        end
+        local open=false
+        local dropH=math.min(#items*optH,isMobile and 160 or 130)
+        lbl.MouseButton1Click:Connect(function()
+            open=not open
+            if open then
+                drop.Size=UDim2.new(1,0,0,0); drop.Visible=true
+                TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,dropH)}):Play()
+            else
+                TweenService:Create(drop,TWEENI,{Size=UDim2.new(1,0,0,0)}):Play()
+                task.delay(0.18,function() drop.Visible=false end)
+            end
+        end)
+        return function() return selected end
+    end
+    local function slrQty(page,label,min_,max_)
+        local val=min_ or 1
+        local row=Instance.new("Frame")
+        row.Size=UDim2.new(1,0,0,ROW_H); row.BackgroundColor3=C_ROW
+        row.BorderSizePixel=0; row.Parent=page; stroke(row,Color3.fromRGB(0,60,90),1)
+        local lbl=Instance.new("TextLabel")
+        lbl.Size=UDim2.new(0.55,0,1,0); lbl.Position=UDim2.fromOffset(8,0)
+        lbl.BackgroundTransparency=1; lbl.Text=label..": "..val
+        lbl.TextColor3=C_TEXT; lbl.Font=Enum.Font.GothamMedium
+        lbl.TextSize=TXT_SIZE; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=row
+        local bsz=isMobile and 34 or 26
+        local minus=Instance.new("TextButton")
+        minus.Size=UDim2.fromOffset(bsz,bsz); minus.Position=UDim2.new(0.55,0,0.5,-bsz/2)
+        minus.BackgroundColor3=Color3.fromRGB(0,20,40); minus.BorderSizePixel=0
+        minus.Text="-"; minus.TextColor3=C_ACCENT; minus.Font=Enum.Font.GothamBold
+        minus.TextSize=TXT_SIZE+2; minus.AutoButtonColor=false; minus.Parent=row; stroke(minus,C_ACCENT,1)
+        local plus=Instance.new("TextButton")
+        plus.Size=UDim2.fromOffset(bsz,bsz); plus.Position=UDim2.new(0.55,bsz+4,0.5,-bsz/2)
+        plus.BackgroundColor3=Color3.fromRGB(0,20,40); plus.BorderSizePixel=0
+        plus.Text="+"; plus.TextColor3=C_ACCENT; plus.Font=Enum.Font.GothamBold
+        plus.TextSize=TXT_SIZE+2; plus.AutoButtonColor=false; plus.Parent=row; stroke(plus,C_ACCENT,1)
+        minus.MouseButton1Click:Connect(function() val=math.max(min_ or 1,val-1); lbl.Text=label..": "..val end)
+        plus.MouseButton1Click:Connect(function() val=math.min(max_ or 20,val+1); lbl.Text=label..": "..val end)
+        return function() return val end
+    end
+    -- Nota
+    do
+        local nr=Instance.new("Frame"); nr.Size=UDim2.new(1,0,0,ROW_H)
+        nr.BackgroundColor3=Color3.fromRGB(20,12,0); nr.BorderSizePixel=0; nr.Parent=pageSLR
+        stroke(nr,Color3.fromRGB(180,120,0),1)
+        local nl=Instance.new("TextLabel"); nl.Size=UDim2.new(1,-8,1,0); nl.Position=UDim2.fromOffset(6,0)
+        nl.BackgroundTransparency=1; nl.Text="Solo funciona en Street Life Remastered"
+        nl.TextColor3=Color3.fromRGB(255,200,60); nl.Font=Enum.Font.GothamBold
+        nl.TextSize=TXT_SIZE; nl.TextXAlignment=Enum.TextXAlignment.Left; nl.Parent=nr
+    end
+    local ITEMS={"Pistol Ammo","SMG Ammo","Shotgun Ammo","Rifle Ammo","Ruger","Makarov","Glock17","M&P9","Mac","Tec-9","G36C","Thompson","Spas","UMP","Shotgun","Glock19X","AK-12","ARPistol","Perun","Draco","GlockSwitch","AK-47","BinaryG17","Vector","MP5","Micro Uzi","TSR-15","Famas","AKS-74U","DuffleBag","MentosBag","C4","SkiMask"}
+    secLabel(pageSLR,"Caja Fuerte")
+    local getDepositItem=slrPicker(pageSLR,"Item",ITEMS)
+    slrBtn(pageSLR,"Depositar Item",Color3.fromRGB(0,25,55),function()
+        local item=getDepositItem(); assert(item,"Selecciona un item")
+        RS.Remotes.Storage:FireServer("Deposit",item)
+    end)
+    local getWithdrawItem=slrPicker(pageSLR,"Sacar Item",ITEMS)
+    slrBtn(pageSLR,"Sacar de Caja (Withdraw)",Color3.fromRGB(0,40,15),function()
+        local item=getWithdrawItem(); assert(item,"Selecciona un item")
+        RS.Remotes.Storage:FireServer("Grab",item)
+    end)
+    slrBtn(pageSLR,"Depositar TODO el Backpack",Color3.fromRGB(0,20,45),function()
+        local char=player.Character
+        for _,t in ipairs(player.Backpack:GetChildren()) do
+            pcall(function() RS.Remotes.Storage:FireServer("Deposit",t.Name) end); task.wait(0.1)
+        end
+        if char then for _,t in ipairs(char:GetChildren()) do
+            if t:IsA("Tool") then pcall(function() RS.Remotes.Storage:FireServer("Deposit",t.Name) end); task.wait(0.1) end
+        end end
+    end)
+    local GUNS={"Ruger","Makarov","Glock17","M&P9","Mac","Tec-9","G36C","Thompson","Spas","UMP","Shotgun","Glock19X","AK-12","ARPistol","Perun","Draco","GlockSwitch","AK-47","BinaryG17","Vector","MP5","Micro Uzi","TSR-15","Famas","AKS-74U"}
+    secLabel(pageSLR,"Comprar Arma")
+    local getGun=slrPicker(pageSLR,"Arma",GUNS)
+    slrBtn(pageSLR,"Comprar Arma",Color3.fromRGB(30,0,55),function()
+        local gun=getGun(); assert(gun,"Selecciona un arma")
+        RS.Remotes.GunBuy:FireServer(gun)
+    end)
+    local AMMOS={"Pistol Ammo","SMG Ammo","Shotgun Ammo","Rifle Ammo"}
+    secLabel(pageSLR,"Comprar Municion")
+    local getAmmo=slrPicker(pageSLR,"Municion",AMMOS)
+    local getAmmoQty=slrQty(pageSLR,"Cantidad",1,20)
+    slrBtn(pageSLR,"Comprar Municion",Color3.fromRGB(30,20,0),function()
+        local ammo=getAmmo(); assert(ammo,"Selecciona municion")
+        local qty=getAmmoQty()
+        for i=1,qty do RS.Remotes.GunBuy:FireServer(ammo); if i<qty then task.wait(0.1) end end
+    end)
+    local BUYITEMS={"DuffleBag","MentosBag","C4","SkiMask"}
+    secLabel(pageSLR,"Compras Generales")
+    local getBuyItem=slrPicker(pageSLR,"Item",BUYITEMS)
+    slrBtn(pageSLR,"Comprar Item",Color3.fromRGB(25,10,45),function()
+        local item=getBuyItem(); assert(item,"Selecciona un item")
+        RS.Remotes.Buy:FireServer(item)
+    end)
+end)
+
+-- ══════════════════════════════════════════════════════════════
 -- DRAG
 -- ══════════════════════════════════════════════════════════════
 do
@@ -1446,7 +1624,10 @@ do
         if drag and (inp.UserInputType==Enum.UserInputType.MouseMovement
         or inp.UserInputType==Enum.UserInputType.Touch) then
             local d=inp.Position-dragStart
-            main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+            local sc=gui.AbsoluteSize
+            local nx=math.clamp(startPos.X.Offset+d.X, 0, sc.X-panelW)
+            local ny=math.clamp(startPos.Y.Offset+d.Y, 0, sc.Y-panelH)
+            main.Position=UDim2.new(startPos.X.Scale,nx,startPos.Y.Scale,ny)
         end
     end)
 end
@@ -1454,12 +1635,13 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- FAB  (botón flotante con logo)
 -- ══════════════════════════════════════════════════════════════
-local fabSz = isMobile and 62 or 48
+local fabSz = isMobile and 62 or 46
 local fab=Instance.new("ImageButton")
 fab.Name="SyyFAB"; fab.Size=UDim2.fromOffset(fabSz,fabSz)
+-- Móvil: esquina inferior derecha | PC: lado derecho centrado
 fab.Position= isMobile
     and UDim2.new(1,-(fabSz+14),1,-(fabSz+40))
-    or  UDim2.new(1,-(fabSz+12),0.5,-(fabSz/2))
+    or  UDim2.new(1,-(fabSz+8),0.5,-(fabSz/2))
 fab.BackgroundColor3=C_DARK; fab.BorderSizePixel=0
 fab.AutoButtonColor=false
 fab.Image="rbxassetid://77130965021335"
@@ -1565,11 +1747,11 @@ UserInputService.InputBegan:Connect(function(inp,proc)
         return
     end
     if proc then return end
-    if inp.KeyCode==Enum.KeyCode.RightAlt then
-        applyStreamMode(not streamModeOn)
-        return
-    end
-    if inp.KeyCode==Enum.KeyCode.RightShift then
+
+    local k=inp.KeyCode
+
+    -- ── Toggle GUI: RightShift (móvil/PC) o Insert (PC) ──────
+    if k==Enum.KeyCode.RightShift or k==Enum.KeyCode.Insert then
         if streamModeOn then return end
         if main.Visible then
             TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
@@ -1578,9 +1760,19 @@ UserInputService.InputBegan:Connect(function(inp,proc)
             main.Visible=true; main.Size=UDim2.fromOffset(panelW,0)
             TweenService:Create(main,TWEENI,{Size=UDim2.fromOffset(panelW,panelH)}):Play()
         end
-    end
-    if inp.KeyCode==Enum.KeyCode.RightControl then
+
+    -- ── Silent Aim: RightControl (móvil/PC) o Delete (PC) ────
+    elseif k==Enum.KeyCode.RightControl or k==Enum.KeyCode.Delete then
         Config.SilentAimEnabled=not Config.SilentAimEnabled; saveConfig()
+        refreshAllToggles()
+
+    -- ── Stream Mode: RightAlt (móvil/PC) o End (PC) ──────────
+    elseif k==Enum.KeyCode.RightAlt or k==Enum.KeyCode.End then
+        applyStreamMode(not streamModeOn)
+
+    -- ── CamLock: Home (PC) ───────────────────────────────────
+    elseif k==Enum.KeyCode.Home then
+        Config.CamLockEnabled=not Config.CamLockEnabled; saveConfig()
         refreshAllToggles()
     end
 end)
@@ -2181,14 +2373,17 @@ end)
 
 print("[SYY toop] Loaded — "..player.Name)
 
--- Ajustes livianos en móvil sin forzar Render/Graphics Level 1
-if isMobile then
-    pcall(function()
-        local lighting = game:GetService("Lighting")
-        lighting.GlobalShadows = false
-        lighting.Technology = Enum.Technology.Compatibility
-    end)
-end
+-- Calidad de render al cargar
+pcall(function()
+    if isMobile then
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        settings().Rendering.EnableFRM = false
+        game:GetService("Lighting").GlobalShadows = false
+        game:GetService("Lighting").Technology = Enum.Technology.Compatibility
+    else
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level05
+    end
+end)
 
 task.defer(function()
     if Config.StreamMode then
