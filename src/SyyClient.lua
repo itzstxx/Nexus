@@ -1831,6 +1831,14 @@ end)
 --   • Wall check    : Config.CamLockWallCheck
 --   • Whitelist     : isWhitelisted() igual que todo lo demás
 -- ══════════════════════════════════════════════════════════════
+local _plrList={}  -- lista de jugadores cacheada, se actualiza con events
+local function _rebuildPlrList()
+    _plrList=Players:GetPlayers()
+end
+_rebuildPlrList()
+Players.PlayerAdded:Connect(_rebuildPlrList)
+Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
+
 local camLockTarget=nil   -- root del objetivo actualmente bloqueado
 
 RunService:BindToRenderStep("SyyCamLock", Enum.RenderPriority.Camera.Value+1, function()
@@ -1892,13 +1900,6 @@ local function _refreshColors()
     if Config.FovColorR~=_lfR  or Config.FovColorG~=_lfG  or Config.FovColorB~=_lfB  then _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB);_lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB end
 end
 local frame=0
-local _plrList={}  -- lista de jugadores cacheada, se actualiza con events
-local function _rebuildPlrList()
-    _plrList=Players:GetPlayers()
-end
-_rebuildPlrList()
-Players.PlayerAdded:Connect(_rebuildPlrList)
-Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
 
 RunService.RenderStepped:Connect(function()
     frame=frame+1
