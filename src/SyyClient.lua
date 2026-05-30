@@ -152,12 +152,12 @@ local function stroke(p,col,thick)
     local s=Instance.new("UIStroke"); s.Color=col or Color3.fromRGB(0,190,255)
     s.Thickness=thick or 1; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s
 end
-local C_BG    = Color3.fromRGB(6,10,18)
-local C_ROW   = Color3.fromRGB(8,14,24)
-local C_DARK  = Color3.fromRGB(3,7,14)
-local C_ACCENT= Color3.fromRGB(0,190,255)
-local C_TEXT  = Color3.fromRGB(180,240,255)
-local C_DIM   = Color3.fromRGB(70,160,210)
+local C_BG    = Color3.fromRGB(10,10,12)
+local C_ROW   = Color3.fromRGB(16,16,20)
+local C_DARK  = Color3.fromRGB(8,8,10)
+local C_ACCENT= Color3.fromRGB(255,50,80)
+local C_TEXT  = Color3.fromRGB(220,210,210)
+local C_DIM   = Color3.fromRGB(160,80,90)
 local TWEENI  = TweenInfo.new(0.18,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
 local TWEENSL = TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
 
@@ -184,9 +184,9 @@ local mainStroke=stroke(main,C_ACCENT,2)
 
 local grad=Instance.new("UIGradient")
 grad.Color=ColorSequence.new({
-    ColorSequenceKeypoint.new(0,Color3.fromRGB(0,18,36)),
-    ColorSequenceKeypoint.new(0.5,Color3.fromRGB(4,10,20)),
-    ColorSequenceKeypoint.new(1,Color3.fromRGB(0,24,44)),
+    ColorSequenceKeypoint.new(0,Color3.fromRGB(18,4,8)),
+    ColorSequenceKeypoint.new(0.5,Color3.fromRGB(10,10,12)),
+    ColorSequenceKeypoint.new(1,Color3.fromRGB(22,4,10)),
 })
 grad.Rotation=40; grad.Parent=main
 
@@ -235,7 +235,7 @@ end)
 local titleLbl=Instance.new("TextLabel")
 titleLbl.Size=UDim2.new(1,-110,0,isMobile and 26 or 24)
 titleLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 6 or 4)
-titleLbl.BackgroundTransparency=1; titleLbl.Text="SYY V1"
+titleLbl.BackgroundTransparency=1; titleLbl.Text="⬡ SYY V1"
 titleLbl.TextColor3=C_ACCENT; titleLbl.Font=Enum.Font.GothamBlack
 titleLbl.TextSize=isMobile and 20 or 18
 titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
@@ -243,7 +243,7 @@ titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=header
 local subLbl=Instance.new("TextLabel")
 subLbl.Size=UDim2.new(1,-110,0,13)
 subLbl.Position=UDim2.fromOffset(logoSize+10, isMobile and 22 or 27)
-subLbl.BackgroundTransparency=1; subLbl.Text="V1  ·  EnanoTop1 (stx)  ·  "..player.Name
+subLbl.BackgroundTransparency=1; subLbl.Text="by EnanoTop1 (stx)  ·  "..player.Name
 subLbl.TextColor3=C_DIM; subLbl.Font=Enum.Font.GothamMedium
 subLbl.TextSize=isMobile and 10 or 9
 subLbl.TextXAlignment=Enum.TextXAlignment.Left; subLbl.Parent=header
@@ -253,7 +253,7 @@ local igBtn=Instance.new("TextButton")
 igBtn.Size=UDim2.new(0,isMobile and 110 or 90,0,isMobile and 14 or 11)
 igBtn.Position=UDim2.fromOffset(logoSize+10, isMobile and 37 or 31)
 igBtn.BackgroundTransparency=1; igBtn.BorderSizePixel=0
-igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255)
+igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(255,80,160)
 igBtn.Font=Enum.Font.GothamBold; igBtn.TextSize=isMobile and 10 or 9
 igBtn.TextXAlignment=Enum.TextXAlignment.Left
 igBtn.AutoButtonColor=false; igBtn.Parent=header
@@ -262,21 +262,21 @@ igBtn.MouseButton1Click:Connect(function()
     if igCopied then return end; igCopied=true
     pcall(function() setclipboard("@itzstxx") end)
     igBtn.Text="✅ Copiado!"; igBtn.TextColor3=Color3.fromRGB(80,255,140)
-    task.delay(1.8,function() igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(200,140,255); igCopied=false end)
+    task.delay(1.8,function() igBtn.Text="📷 @itzstxx"; igBtn.TextColor3=Color3.fromRGB(255,80,160); igCopied=false end)
 end)
-igBtn.MouseEnter:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,180,255) end end)
-igBtn.MouseLeave:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(200,140,255) end end)
+igBtn.MouseEnter:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,140,200) end end)
+igBtn.MouseLeave:Connect(function() if not igCopied then igBtn.TextColor3=Color3.fromRGB(255,80,160) end end)
 
 -- botón X — más grande en móvil
 local closeBtnSz = isMobile and 42 or 34
 local closeBtn=Instance.new("TextButton")
 closeBtn.Size=UDim2.fromOffset(closeBtnSz,closeBtnSz)
 closeBtn.Position=UDim2.new(1,-(closeBtnSz+4),0.5,-(closeBtnSz/2))
-closeBtn.BackgroundColor3=Color3.fromRGB(35,8,8); closeBtn.BorderSizePixel=0
+closeBtn.BackgroundColor3=Color3.fromRGB(25,8,10); closeBtn.BorderSizePixel=0
 closeBtn.Text="✕"; closeBtn.TextColor3=Color3.fromRGB(255,80,80)
 closeBtn.Font=Enum.Font.GothamBold; closeBtn.TextSize=isMobile and 16 or 13
 closeBtn.AutoButtonColor=false; closeBtn.Parent=header
-stroke(closeBtn,Color3.fromRGB(120,30,30),1)
+stroke(closeBtn,Color3.fromRGB(200,30,50),1)
 closeBtn.MouseButton1Click:Connect(function()
     TweenService:Create(main,TweenInfo.new(0.15,Enum.EasingStyle.Quad),{BackgroundTransparency=1}):Play()
     task.delay(0.15,function() main.Visible=false; main.BackgroundTransparency=0 end)
@@ -382,7 +382,7 @@ local function makeToggle(page,text,key,cb)
     local row=Instance.new("Frame")
     row.Size=UDim2.new(1,0,0,ROW_H); row.BackgroundColor3=C_ROW
     row.BorderSizePixel=0; row.Parent=page
-    stroke(row,Color3.fromRGB(0,60,90),1)
+    stroke(row,Color3.fromRGB(60,15,22),1)
 
     local lbl=Instance.new("TextLabel")
     lbl.Size=UDim2.new(1,-(TOG_W+16),1,0); lbl.Position=UDim2.fromOffset(8,0)
@@ -395,18 +395,18 @@ local function makeToggle(page,text,key,cb)
     tog.Size=UDim2.fromOffset(TOG_W,TOG_H)
     tog.Position=UDim2.new(1,-(TOG_W+6),0.5,-(TOG_H/2))
     tog.BackgroundColor3=Color3.fromRGB(20,30,40); tog.BorderSizePixel=0; tog.Parent=row
-    stroke(tog,Color3.fromRGB(0,80,120),1)
+    stroke(tog,Color3.fromRGB(80,20,30),1)
 
     local dot=Instance.new("Frame")
     dot.Size=UDim2.fromOffset(DOT_SZ,DOT_SZ); dot.BorderSizePixel=0
-    dot.BackgroundColor3=Color3.fromRGB(60,80,100); dot.Parent=tog
+    dot.BackgroundColor3=Color3.fromRGB(80,40,50); dot.Parent=tog
 
     local function refresh()
         local on=Config[key]
-        TweenService:Create(tog,TWEENI,{BackgroundColor3=on and Color3.fromRGB(0,40,70) or Color3.fromRGB(20,30,40)}):Play()
+        TweenService:Create(tog,TWEENI,{BackgroundColor3=on and Color3.fromRGB(60,8,14) or Color3.fromRGB(22,18,18)}):Play()
         TweenService:Create(dot,TWEENI,{
             Position=on and UDim2.fromOffset(TOG_W-DOT_SZ-2,2) or UDim2.fromOffset(2,2),
-            BackgroundColor3=on and C_ACCENT or Color3.fromRGB(60,80,100),
+            BackgroundColor3=on and C_ACCENT or Color3.fromRGB(80,40,50),
         }):Play()
     end
     refresh()
@@ -438,8 +438,8 @@ local function makeSlider(page,text,key,mn,mx,cb)
     local trackH = isMobile and 7 or 5
     local track=Instance.new("Frame")
     track.Size=UDim2.new(1,-16,0,trackH); track.Position=UDim2.fromOffset(8,trackY)
-    track.BackgroundColor3=Color3.fromRGB(12,22,34); track.BorderSizePixel=0; track.Parent=row
-    stroke(track,Color3.fromRGB(0,60,90),1)
+    track.BackgroundColor3=Color3.fromRGB(20,12,14); track.BorderSizePixel=0; track.Parent=row
+    stroke(track,Color3.fromRGB(50,12,18),1)
 
     local fill=Instance.new("Frame")
     fill.BackgroundColor3=C_ACCENT; fill.BorderSizePixel=0; fill.Parent=track
@@ -522,7 +522,7 @@ local function makeColorRow(page,text,rk,gk,bk)
         local sr=Instance.new("Frame")
         sr.Size=UDim2.new(1,0,0,ROW_H); sr.BackgroundColor3=C_ROW
         sr.BorderSizePixel=0; sr.Parent=container
-        stroke(sr,Color3.fromRGB(0,50,80),1)
+        stroke(sr,Color3.fromRGB(50,12,18),1)
 
         local sl=Instance.new("TextLabel")
         sl.Size=UDim2.new(0,56,1,0); sl.Position=UDim2.fromOffset(8,0)
@@ -533,7 +533,7 @@ local function makeColorRow(page,text,rk,gk,bk)
         local track=Instance.new("Frame")
         track.Size=UDim2.new(1,-76,0,trackH2)
         track.Position=UDim2.new(0,66,0.5,-(trackH2/2))
-        track.BackgroundColor3=Color3.fromRGB(20,35,50); track.BorderSizePixel=0; track.Parent=sr
+        track.BackgroundColor3=Color3.fromRGB(28,14,18); track.BorderSizePixel=0; track.Parent=sr
         local fill=Instance.new("Frame")
         fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=C_ACCENT
         fill.BorderSizePixel=0; fill.Parent=track
@@ -2044,14 +2044,16 @@ RunService.RenderStepped:Connect(function()
                         bestPos=hp.Position
                     end
                 else
-                    -- ── PC: target por distancia 3D desde el jugador
-                    -- No depende del tamaño de ventana ni del foco
-                    if not myRoot then continue end
-                    local dist3D=(root.Position-myRoot.Position).Magnitude
+                    -- ── PC: target FOV 2D (mouse position) — funciona con juego minimizado
+                    -- Usamos mouse position real en vez de center2D para Xeno/juego minimizado
+                    if not onS then continue end
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local dMouse = (Vector2.new(sp2.X, sp2.Y) - mousePos).Magnitude
+                    local dist3D = myRoot and (root.Position-myRoot.Position).Magnitude or math.huge
 
-                    -- Filtro de FOV opcional: si FovRadius<800 lo aplicamos
-                    if not streamModeOn and Config.FovRadius<800 then
-                        if d2>fovLimit then continue end
+                    -- FOV check: distancia del target al cursor del mouse
+                    if not streamModeOn then
+                        if dMouse > Config.FovRadius then continue end
                     end
 
                     if Config.VisibleCheck and not Config.Manipulation then
@@ -2062,8 +2064,10 @@ RunService.RenderStepped:Connect(function()
                         end
                     end
 
-                    if dist3D<bestScore then
-                        bestScore=dist3D
+                    -- Score: combina distancia al mouse y distancia 3D
+                    local score = dMouse + dist3D * 0.01
+                    if score < bestScore then
+                        bestScore = score
                         local pn=Config.TargetPart
                         if pn=="Random" then local r=math.random(100); pn=r<=30 and "Head" or (r<=80 and "UpperTorso" or "LowerTorso")
                         elseif pn=="Pierna" then pn="LowerTorso"
