@@ -1866,6 +1866,19 @@ pcall(function()
 end)
 
 -- ══════════════════════════════════════════════════════════════
+-- PLAYER LIST — debe estar antes de CamLock y RenderStepped
+-- ══════════════════════════════════════════════════════════════
+local _plrList={}
+local function _rebuildPlrList()
+    _plrList=Players:GetPlayers()
+end
+_rebuildPlrList()
+Players.PlayerAdded:Connect(_rebuildPlrList)
+Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
+
+local frame=0
+
+-- ══════════════════════════════════════════════════════════════
 -- CAM LOCK — BindToRenderStep prioridad Camera+1
 --   Corre DESPUÉS del script de cámara nativo de Roblox (prio 200)
 --   así no lo sobreescriben. Funciona en tercera persona móvil.
@@ -1947,15 +1960,6 @@ local function _refreshColors()
     if Config.SnapColorR~=_lsnR or Config.SnapColorG~=_lsnG or Config.SnapColorB~=_lsnB then _snapCol=Color3.fromRGB(Config.SnapColorR,Config.SnapColorG,Config.SnapColorB);_lsnR,_lsnG,_lsnB=Config.SnapColorR,Config.SnapColorG,Config.SnapColorB end
     if Config.FovColorR~=_lfR  or Config.FovColorG~=_lfG  or Config.FovColorB~=_lfB  then _fovCol=Color3.fromRGB(Config.FovColorR,Config.FovColorG,Config.FovColorB);_lfR,_lfG,_lfB=Config.FovColorR,Config.FovColorG,Config.FovColorB end
 end
-local frame=0
-local _plrList={}  -- lista de jugadores cacheada, se actualiza con events
-local function _rebuildPlrList()
-    _plrList=Players:GetPlayers()
-end
-_rebuildPlrList()
-Players.PlayerAdded:Connect(_rebuildPlrList)
-Players.PlayerRemoving:Connect(function() task.defer(_rebuildPlrList) end)
-
 RunService.RenderStepped:Connect(function()
     frame=frame+1
 
